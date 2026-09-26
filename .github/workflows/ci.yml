@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.repository == 'pingdotgg/t3code'
     name: Check
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -74,6 +75,7 @@ jobs:
   # only bought us idle runners between dependency layers. The concurrency
   # limit stays at the default 4 so peak load per runner is unchanged.
   test:
+    if: github.repository == 'pingdotgg/t3code'
     name: Test
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -117,6 +119,7 @@ jobs:
   # separate workers, so no two server test files ever share a machine and the
   # isolation that flag buys is preserved exactly.
   test_server:
+    if: github.repository == 'pingdotgg/t3code'
     name: Test Server ${{ matrix.shard }}
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -184,6 +187,7 @@ jobs:
   # Split out of Check and Test: both paid ~7-9s to install a Rust toolchain
   # for checks that take under 3s, on the critical path of every PR.
   rust:
+    if: github.repository == 'pingdotgg/t3code'
     name: Rust
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
@@ -218,6 +222,7 @@ jobs:
   # for it on every push. Detection is API-only (no checkout) and fails open: if
   # the diff cannot be resolved, the lint runs.
   mobile_native_changes:
+    if: github.repository == 'pingdotgg/t3code'
     name: Mobile Native Changes
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
@@ -296,7 +301,7 @@ jobs:
     needs: mobile_native_changes
     # Skip only on an explicit "no": a gate job that failed or errored leaves the
     # output empty, and that must run the lint rather than silently skip it.
-    if: ${{ !cancelled() && needs.mobile_native_changes.outputs.changed != 'false' }}
+    if: ${{ github.repository == 'pingdotgg/t3code' && (!cancelled() && needs.mobile_native_changes.outputs.changed != 'false') }}
     runs-on: blacksmith-6vcpu-macos-26
     timeout-minutes: 10
     steps:
@@ -324,6 +329,7 @@ jobs:
         run: vp run lint:mobile
 
   release_smoke:
+    if: github.repository == 'pingdotgg/t3code'
     name: Release Smoke
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10

@@ -97,6 +97,7 @@ permissions:
 
 jobs:
   build:
+    if: github.repository == 'pingdotgg/t3code'
     name: Build ${{ inputs.label }}
     runs-on: ${{ inputs.runner }}
     timeout-minutes: 30

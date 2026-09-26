@@ -1,0 +1,90 @@
+name: Sync upstream
+
+# Weekly (or on demand): merges the latest official T3 Code into a
+# `snow/sync-upstream` branch and opens a pull request. Review it, merge it,
+# then run the Release workflow to ship the update to installed apps.
+#
+# Needs a repository secret named SYNC_TOKEN: a personal access token with the
+# `repo` and `workflow` scopes. GitHub refuses pushes that touch workflow files
+# from the default Actions token, and upstream commits often do.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: snow-sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  sync:
+    name: Merge upstream
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require SYNC_TOKEN
+        env:
+          SYNC_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          if [[ -z "$SYNC_TOKEN" ]]; then
+            echo "::error::Add a SYNC_TOKEN repository secret (a personal access token with repo and workflow scopes). See the README's 'Updating from upstream' section."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: false
+
+      - name: Merge upstream
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B snow/sync-upstream
+          set +e
+          bash scripts/snow/sync-upstream.sh 2>&1 | tee "$RUNNER_TEMP/sync.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [[ $status -ne 0 && $status -ne 2 ]]; then exit "$status"; fi
+          if git diff --quiet origin/main HEAD; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Open or update pull request
+        if: steps.merge.outputs.status == '0' && steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          git push --force origin snow/sync-upstream
+          if [[ -z "$(gh pr list --head snow/sync-upstream --state open --json number --jq '.[].number')" ]]; then
+            gh pr create --base main --head snow/sync-upstream \
+              --title "Sync upstream T3 Code" \
+              --body "Merges the latest [pingdotgg/t3code](https://github.com/pingdotgg/t3code) main. Merge once CI is green, then run the **Release** workflow to ship it."
+          fi
+
+      - name: Report merge conflicts
+        if: steps.merge.outputs.status == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="$(printf 'The weekly upstream sync hit conflicts it cannot resolve on its own.\n\nRun `scripts/snow/sync-upstream.sh` locally (or ask Claude to), resolve the files it lists, and push.\n\n```\n%s\n```' "$(tail -40 "$RUNNER_TEMP/sync.log")")"
+          existing="$(gh issue list --state open --search 'Upstream sync needs a manual merge in:title' --json number --jq '.[0].number')"
+          if [[ -n "$existing" ]]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Upstream sync needs a manual merge" --body "$body"
+          fi

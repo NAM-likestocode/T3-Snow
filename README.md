@@ -1,3 +1,30 @@
+# T3-Snow
+
+A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictation.
+
+- **Download:** grab the Windows `.exe` or Linux `.AppImage` from
+  [Releases](https://github.com/NAM-likestocode/T3-Snow/releases). Installed apps
+  update themselves when a new release is published.
+- **Voice:** click the mic in the composer or press `Ctrl+Shift+Space`
+  (`Cmd+Shift+Space` on macOS). Whisper runs on your machine: no API key, no cost.
+  See **Settings → Voice**.
+
+### Maintaining the fork
+
+- **Ship a release:** Actions → **Release** → Run workflow. It builds Windows and
+  Linux and publishes a GitHub release. The version is automatic (`1.<run>.0`),
+  or push a tag like `v1.2.0`.
+- **Get upstream updates:** Actions → **Sync upstream** runs weekly (or on demand)
+  and opens a pull request merging the latest official T3 Code. It needs a
+  repository secret named `SYNC_TOKEN`: a personal access token with the `repo`
+  and `workflow` scopes (Settings → Secrets and variables → Actions). If the
+  merge has conflicts it opens an issue instead. Locally, run
+  `scripts/snow/sync-upstream.sh`.
+- Upstream's own workflows stay in the repo but only run in `pingdotgg/t3code`;
+  `scripts/snow/guard-upstream-workflows.ts` keeps them that way after each sync.
+
+---
+
 # T3 Code
 
 T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
