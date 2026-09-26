@@ -65,6 +65,7 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import * as ThreadTurnPreamble from "../../wake/ThreadTurnPreamble.ts";
 import * as TerminalManager from "../../terminal/Manager.ts";
 const isProviderAdapterProcessError = Schema.is(ProviderAdapterProcessError);
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
@@ -224,6 +225,8 @@ const make = Effect.gen(function* () {
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
   const terminalManager = yield* TerminalManager.TerminalManager;
+  // T3-Snow: optional so harnesses without the Autopilot/Council features still build.
+  const turnPreamble = yield* Effect.serviceOption(ThreadTurnPreamble.ThreadTurnPreamble);
   /** Environment settings with the thread's project overrides applied. */
   const projectSettingsForThread = Effect.fnUntraced(function* (threadId: ThreadId) {
     const settings = yield* serverSettingsService.getSettings;
@@ -1490,12 +1493,15 @@ const make = Effect.gen(function* () {
       turnsAfterCompaction.set(event.payload.threadId, queued);
       return;
     }
+    const providerText = projectComposerContextForProvider({
+      text: message.text,
+      records: message.context?.records ?? [],
+    });
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: projectComposerContextForProvider({
-        text: message.text,
-        records: message.context?.records ?? [],
-      }),
+      messageText: Option.isSome(turnPreamble)
+        ? yield* turnPreamble.value.apply(event.payload.threadId, providerText)
+        : providerText,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

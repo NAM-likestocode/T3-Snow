@@ -123,6 +123,7 @@ import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
   type ComposerSubmissionIntent,
+  parseAutopilotCommand,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -497,6 +498,7 @@ import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFi
 import { assetEnvironment } from "../state/assets";
 import { readPreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
+import { autopilotEnvironment } from "../state/autopilot";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button } from "./ui/button";
 import {
@@ -1537,6 +1539,7 @@ export default function ChatView(props: ChatViewProps) {
   const respondToThreadUserInput = useAtomCommand(threadEnvironment.respondToUserInput, {
     reportFailure: false,
   });
+  const startAutopilot = useAtomCommand(autopilotEnvironment.start, { reportFailure: false });
   const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
     reportFailure: false,
   });
@@ -7365,6 +7368,48 @@ export default function ChatView(props: ChatViewProps) {
         setComposerDraftPrompt(composerDraftTarget, "");
         composerRef.current?.resetCursorState();
       }
+      return;
+    }
+
+    // T3-Snow: `/autopilot <goal>` is handled by T3 Code, never sent to the provider.
+    const autopilotGoal =
+      !directAnnotation && !composerHasNonPromptContent
+        ? parseAutopilotCommand(promptRef.current)
+        : null;
+    if (autopilotGoal !== null) {
+      const warn = (title: string, description?: string) =>
+        toastManager.add(
+          stackedThreadToast({ type: "warning", title, ...(description ? { description } : {}) }),
+        );
+      if (!autopilotGoal) {
+        warn("Usage: /autopilot <end goal>");
+        return;
+      }
+      if (!isServerThread || !activeThreadId || !activeThreadEnvironmentId) {
+        warn("Send a first message, then start Autopilot", "Autopilot runs in an existing thread.");
+        return;
+      }
+      if (queuedMessages.length > 0) {
+        warn("Autopilot can start only when no other agent work is active or queued.");
+        return;
+      }
+      const result = await startAutopilot({
+        environmentId: activeThreadEnvironmentId,
+        input: { threadId: activeThreadId, goal: autopilotGoal },
+      });
+      if (result._tag === "Failure") {
+        const error = squashAtomCommandFailure(result);
+        warn("Autopilot did not start", error instanceof Error ? error.message : undefined);
+        return;
+      }
+      if (!result.value.started) {
+        warn(result.value.message ?? "Autopilot did not start");
+        return;
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
+      if (result.value.message) warn("Autopilot is on", result.value.message);
       return;
     }
 

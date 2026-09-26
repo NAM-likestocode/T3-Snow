@@ -13,6 +13,8 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
 - **Helpers:** agents hand parts of a task to helpers on any model (Claude Opus 5.5
   by default), which report back when done. Running ones show above the composer;
   pick the default in **Settings → General → Helper model**.
+- **Autopilot:** send `/autopilot <goal>` and the agent works on it alone until it
+  is done and verified, answering its own questions, then turns itself off.
 - **System chat:** press `Ctrl+Shift+U` (or pick **System chat** in the command
   palette) to ask about your computer without choosing a project.
 

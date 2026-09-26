@@ -193,6 +193,23 @@ helper's name; optional frontmatter sets `description`, `tools`, `model`, and
 edit, write, or shell tools makes the helper read-only. Helpers still running
 when T3 Code restarts are reported to their thread as failed.
 
+## Autopilot
+
+Send `/autopilot <end goal>` in a thread and the agent works on that goal on its
+own until it is done and checked, then gives one short report. It doesn't stop to
+ask you questions: T3 Code answers them for it with "infer a reasonable decision
+and continue". Autopilot works the same with every provider.
+
+Autopilot starts only when the thread is idle with nothing queued, so send a first
+message in a new thread before using it. While it is on, a banner above the composer
+shows the goal and a **Stop** button. It turns itself off once the agent is finished
+and has no helpers or wake-ups still pending.
+
+Autopilot does not change permissions or approve anything for you. In
+**Approval required** mode it stops at each approval prompt, so switch to **Auto** or
+**Full access** to let it run unattended. If T3 Code restarts while Autopilot is on,
+the banner shows it as paused; choose **Resume** or **Stop**.
+
 ## Voice dictation on web and desktop
 
 Click the microphone next to the attach button, or press `mod+shift+space`, and
