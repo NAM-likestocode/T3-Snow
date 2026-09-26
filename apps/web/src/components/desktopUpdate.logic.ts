@@ -2,7 +2,8 @@ import type { DesktopUpdateActionResult, DesktopUpdateState } from "@t3tools/con
 
 export type DesktopUpdateButtonAction = "download" | "install" | "none";
 
-const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/pingdotgg/t3code/releases";
+// T3-Snow: desktop builds update from this fork's releases.
+const DESKTOP_RELEASE_HISTORY_URL = "https://github.com/NAM-likestocode/T3-Snow/releases";
 const DESKTOP_RELEASE_TAG_URL = `${DESKTOP_RELEASE_HISTORY_URL}/tag`;
 
 /**

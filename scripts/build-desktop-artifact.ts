@@ -2693,6 +2693,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       extendInfo: {
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
+        NSMicrophoneUsageDescription:
+          "T3 Code listens only while you dictate. Speech is transcribed on this Mac.",
       },
       protocols: [
         {
