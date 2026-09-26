@@ -17,6 +17,7 @@ import {
   formatAssistantCitationForComposer,
   isCollapsedCursorAdjacentToInlineToken,
   parseAutopilotCommand,
+  parseCouncilCommand,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "./composer-logic";
@@ -721,6 +722,16 @@ describe("isCollapsedCursorAdjacentToInlineToken", () => {
 
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenEnd, "left")).toBe(true);
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenStart, "right")).toBe(true);
+  });
+});
+
+describe("parseCouncilCommand", () => {
+  it("returns the arguments, empty for a bare command, and null for other text", () => {
+    expect(parseCouncilCommand("/council opus5max --quick Sell soup")).toBe(
+      "opus5max --quick Sell soup",
+    );
+    expect(parseCouncilCommand("/council")).toBe("");
+    expect(parseCouncilCommand("/councils")).toBeNull();
   });
 });
 

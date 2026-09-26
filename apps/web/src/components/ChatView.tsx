@@ -118,12 +118,13 @@ import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { isElectron } from "../env";
-import { readLocalApi } from "../localApi";
+import { ensureLocalApi, readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
   collapseExpandedComposerCursor,
   type ComposerSubmissionIntent,
   parseAutopilotCommand,
+  parseCouncilCommand,
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
@@ -499,6 +500,7 @@ import { assetEnvironment } from "../state/assets";
 import { readPreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
 import { autopilotEnvironment } from "../state/autopilot";
+import { councilEnvironment } from "../state/council";
 import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { Button } from "./ui/button";
 import {
@@ -1540,6 +1542,8 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const startAutopilot = useAtomCommand(autopilotEnvironment.start, { reportFailure: false });
+  const prepareCouncil = useAtomCommand(councilEnvironment.prepare, { reportFailure: false });
+  const startCouncil = useAtomCommand(councilEnvironment.start, { reportFailure: false });
   const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
     reportFailure: false,
   });
@@ -7368,6 +7372,61 @@ export default function ChatView(props: ChatViewProps) {
         setComposerDraftPrompt(composerDraftTarget, "");
         composerRef.current?.resetCursorState();
       }
+      return;
+    }
+
+    // T3-Snow: `/council …` asks the environment, confirms, and never reaches the provider.
+    const councilArgs =
+      !directAnnotation && !composerHasNonPromptContent
+        ? parseCouncilCommand(promptRef.current)
+        : null;
+    if (councilArgs !== null) {
+      const notify = (type: "info" | "warning", title: string, description?: string) =>
+        toastManager.add(
+          stackedThreadToast({ type, title, ...(description ? { description } : {}) }),
+        );
+      if (!isServerThread || !activeThreadId || !activeThreadEnvironmentId) {
+        notify("warning", "Send a first message, then convene the council");
+        return;
+      }
+      const target = { environmentId: activeThreadEnvironmentId, threadId: activeThreadId };
+      const prepared = await prepareCouncil({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId, args: councilArgs },
+      });
+      if (prepared._tag === "Failure") {
+        const error = squashAtomCommandFailure(prepared);
+        notify(
+          "warning",
+          "Council unavailable",
+          error instanceof Error ? error.message : undefined,
+        );
+        return;
+      }
+      if (prepared.value.kind === "info") {
+        const [title = "Council", ...rest] = prepared.value.text.split("\n");
+        notify("info", title, rest.join("\n") || undefined);
+        return;
+      }
+      if (!(await ensureLocalApi().dialogs.confirm(prepared.value.text))) return;
+      const started = await startCouncil({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId, args: councilArgs },
+      });
+      if (started._tag === "Failure" || !started.value.started) {
+        const message =
+          started._tag === "Success"
+            ? started.value.message
+            : (() => {
+                const error = squashAtomCommandFailure(started);
+                return error instanceof Error ? error.message : undefined;
+              })();
+        notify("warning", "The council did not sit", message);
+        return;
+      }
+      promptRef.current = "";
+      clearComposerDraftContent(composerDraftTarget);
+      composerRef.current?.resetCursorState();
       return;
     }
 

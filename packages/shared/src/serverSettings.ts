@@ -394,6 +394,18 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
+    // T3-Snow: model selections replace whole, like the ones above.
+    ...(patch.helperModelSelection !== undefined
+      ? { helperModelSelection: patch.helperModelSelection }
+      : {}),
+    ...(patch.council?.models !== undefined
+      ? {
+          council: {
+            ...next.council,
+            models: { ...current.council.models, ...patch.council.models },
+          },
+        }
+      : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),
   };

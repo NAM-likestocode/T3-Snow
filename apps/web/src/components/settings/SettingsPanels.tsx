@@ -60,6 +60,7 @@ import {
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { HelperSettingsSection } from "./HelperSettings";
+import { CouncilSettingsSection } from "./CouncilSettings";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
@@ -3232,6 +3233,8 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <HelperSettingsSection />
+
+      <CouncilSettingsSection />
 
       <SettingsSection id="about" title="About">
         {isElectron || HOSTED_APP_CHANNEL ? (

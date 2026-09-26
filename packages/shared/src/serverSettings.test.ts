@@ -41,6 +41,23 @@ describe("serverSettings helpers", () => {
       logsAfterDays: 30,
     });
   });
+  it("replaces helper and council model choices whole, keeping other council fields", () => {
+    const codex = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-astra" };
+    expect(
+      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { helperModelSelection: codex })
+        .helperModelSelection,
+    ).toEqual(codex);
+
+    const withRounds = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      council: { rounds: 3, models: { skeptic: DEFAULT_SERVER_SETTINGS.helperModelSelection } },
+    });
+    const council = applyServerSettingsPatch(withRounds, {
+      council: { models: { skeptic: codex, cfo: codex } },
+    }).council;
+    expect(council.rounds).toBe(3);
+    expect(council.models).toMatchObject({ optimist: null, skeptic: codex, cfo: codex });
+    expect(council.models.skeptic).not.toHaveProperty("options");
+  });
   it("replaces SSH host lists when saving, editing, and removing hosts", () => {
     const host = { id: "mini", label: "Mac mini", target: "mini" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });

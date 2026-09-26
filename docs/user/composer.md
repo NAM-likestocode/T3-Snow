@@ -210,6 +210,28 @@ Autopilot does not change permissions or approve anything for you. In
 **Full access** to let it run unattended. If T3 Code restarts while Autopilot is on,
 the banner shows it as paused; choose **Resume** or **Stop**.
 
+## Council
+
+Send `/council <idea>` to put an idea in front of four advisors: an Optimist, a
+Skeptic, a CFO, and an Operator. They answer on their own, then argue with each
+other, and a Chair decides whether the idea is smart. The report arrives in the
+thread with the Chair's verdict first and the full debate below it, and the
+thread's agent can answer follow-up questions about it.
+
+T3 Code shows what the council will cost and asks before it starts. While it sits,
+a panel above the composer shows each member's progress; **Cancel** stops it. Only
+one council can sit in a thread at a time.
+
+- `/council opus5max <idea>` runs every seat on one model and effort (also
+  `opus5:xhigh`). Without a model, seats use the models in **Settings → General →
+  Council**, or the thread's model.
+- `--quick` runs opening statements only; `--rounds 3` adds a second debate round.
+- `--no-web` keeps members off the web. With web research on, your idea text is
+  sent to the model's search provider.
+- `/council models` lists usable models; `/council help` shows all options.
+
+Members run on Claude or Codex models, with no access to your files or tools.
+
 ## Voice dictation on web and desktop
 
 Click the microphone next to the attach button, or press `mod+shift+space`, and
