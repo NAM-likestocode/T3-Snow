@@ -147,7 +147,8 @@ transcription or cancellation; only the message text is sent when you submit.
 
 Click the microphone next to the attach button, or press `mod+shift+space`, and
 start talking. Press it again (or click stop) to transcribe; the text is inserted
-at your cursor for you to review before sending. `Esc` discards the recording.
+at your cursor for you to review before sending. Press `Enter` instead to
+transcribe and send in one step. `Esc` discards the recording.
 
 Whisper runs on your device, so dictation is free and private. The first time you
 dictate, the model downloads once (about 80 MB for the default) and is cached;

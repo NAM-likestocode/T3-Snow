@@ -28,13 +28,16 @@ function releaseStream(recording: Recording) {
 }
 
 export function useVoiceDictation(input: {
-  readonly onTranscript: (text: string) => void;
+  /** `send` is true when the user asked to send the message once transcribed. */
+  readonly onTranscript: (text: string, options: { readonly send: boolean }) => void;
   readonly onError: (message: string) => void;
 }) {
   const modelId = useClientSettings((settings) => settings.voiceModel);
   const language = useClientSettings((settings) => settings.voiceLanguage);
   const [phase, setPhaseState] = useState<VoiceDictationPhase>("idle");
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [sendQueued, setSendQueued] = useState(false);
+  const sendQueuedRef = useRef(false);
   const recordingRef = useRef<Recording | null>(null);
   // Mirrors `phase` synchronously so rapid toggles never start two recordings.
   const phaseRef = useRef<VoiceDictationPhase>("idle");
@@ -48,6 +51,11 @@ export function useVoiceDictation(input: {
   const setPhase = useCallback((next: VoiceDictationPhase) => {
     phaseRef.current = next;
     setPhaseState(next);
+  }, []);
+
+  const setSendAfterTranscript = useCallback((next: boolean) => {
+    sendQueuedRef.current = next;
+    setSendQueued(next);
   }, []);
 
   const finish = useCallback(
@@ -70,21 +78,23 @@ export function useVoiceDictation(input: {
           return;
         }
         const text = await transcribeWithWhisper(audio, optionsRef.current);
-        if (text) callbacksRef.current.onTranscript(text);
+        if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
         else callbacksRef.current.onError("Didn't catch anything. Try speaking a little closer.");
       } catch (error) {
         callbacksRef.current.onError(
           error instanceof Error && error.message ? error.message : "Transcription failed.",
         );
       } finally {
+        setSendAfterTranscript(false);
         setPhase("idle");
       }
     },
-    [setPhase],
+    [setPhase, setSendAfterTranscript],
   );
 
   const start = useCallback(async () => {
     if (phaseRef.current !== "idle") return;
+    setSendAfterTranscript(false);
     setPhase("starting");
     // Fetch or warm the model while the user talks, so the first dictation
     // does not wait for the whole download after they stop.
@@ -116,7 +126,7 @@ export function useVoiceDictation(input: {
     recorder.start();
     setElapsedMs(0);
     setPhase("recording");
-  }, [finish, setPhase]);
+  }, [finish, setPhase, setSendAfterTranscript]);
 
   const stop = useCallback(() => {
     const recording = recordingRef.current;
@@ -124,9 +134,17 @@ export function useVoiceDictation(input: {
     recording.recorder.stop();
   }, []);
 
+  /** Stops recording (if still running) and sends the message once transcribed. */
+  const stopAndSend = useCallback(() => {
+    if (phaseRef.current !== "recording" && phaseRef.current !== "transcribing") return;
+    setSendAfterTranscript(true);
+    stop();
+  }, [setSendAfterTranscript, stop]);
+
   const cancel = useCallback(() => {
     const recording = recordingRef.current;
     if (!recording) return;
+    setSendAfterTranscript(false);
     recording.discard = true;
     if (recording.recorder.state === "inactive") {
       releaseStream(recording);
@@ -135,7 +153,7 @@ export function useVoiceDictation(input: {
     } else {
       recording.recorder.stop();
     }
-  }, [setPhase]);
+  }, [setPhase, setSendAfterTranscript]);
 
   const toggle = useCallback(() => {
     if (phaseRef.current === "idle") void start();
@@ -167,5 +185,5 @@ export function useVoiceDictation(input: {
     [],
   );
 
-  return { phase, elapsedMs, modelId, start, stop, cancel, toggle };
+  return { phase, elapsedMs, modelId, sendQueued, start, stop, stopAndSend, cancel, toggle };
 }
