@@ -17,6 +17,7 @@ export type SettingsPath =
   | "/settings/appearance"
   | "/settings/keybindings"
   | "/settings/snap-shot"
+  | "/settings/voice"
   | "/settings/providers"
   | "/settings/integrations"
   | "/settings/scheduled-tasks"
@@ -89,6 +90,7 @@ export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
   "/settings/appearance": "Appearance",
   "/settings/keybindings": "Keybindings",
   "/settings/snap-shot": "SnapShots",
+  "/settings/voice": "Voice",
   "/settings/providers": "Providers",
   "/settings/integrations": "Integrations",
   "/settings/scheduled-tasks": "Scheduled Tasks",
@@ -530,6 +532,33 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   ...KEYBINDING_SEARCH_ITEMS,
   {
+    id: "voice-dictation-enabled",
+    title: "Voice dictation",
+    to: "/settings/voice",
+    searchTerms: ["whisper speech to text microphone mic dictate talk transcribe"],
+  },
+  {
+    id: "voice-model",
+    title: "Whisper model",
+    to: "/settings/voice",
+    targetId: "voice-dictation-enabled",
+    searchTerms: ["speech recognition download offline local tiny base small"],
+  },
+  {
+    id: "voice-language",
+    title: "Dictation language",
+    to: "/settings/voice",
+    targetId: "voice-dictation-enabled",
+    searchTerms: ["whisper multilingual language"],
+  },
+  {
+    id: "voice-shortcut",
+    title: "Dictation shortcut",
+    to: "/settings/voice",
+    targetId: "voice-dictation-enabled",
+    searchTerms: ["voice keybinding hotkey"],
+  },
+  {
     id: "snap-shot-enabled",
     title: "SnapShots",
     searchTerms: ["window capture screenshot"],
@@ -883,6 +912,7 @@ const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScop
   "/settings/general": null,
   "/settings/appearance": null,
   "/settings/snap-shot": null,
+  "/settings/voice": null,
   // Keybindings fan out to the selection; Providers shows the representative
   // environment at any selection. Neither needs a particular scope to render.
   "/settings/keybindings": null,
