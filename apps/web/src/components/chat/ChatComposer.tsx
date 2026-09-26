@@ -135,6 +135,8 @@ import {
 } from "./ComposerTasksBadge";
 import { ComposerDeferBanner } from "./ComposerDeferBanner";
 import { ComposerHelpersBanner } from "./ComposerHelpersBanner";
+import { ComposerAutopilotBanner } from "./ComposerAutopilotBanner";
+import { useAutopilotSupported } from "~/state/autopilot";
 import { ComposerActivityRow } from "./ComposerActivityStatus";
 import {
   reconcileAttachmentContextReferences,
@@ -2045,6 +2047,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
+  const autopilotSupported = useAutopilotSupported(environmentId);
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: selectedProviderStatus,
@@ -2386,6 +2389,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               },
             ] as const)
           : []),
+        // T3-Snow: runs on the environment, so only where it supports it; the goal follows.
+        ...(autopilotSupported && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:autopilot",
+                type: "slash-command",
+                command: "autopilot",
+                label: "/autopilot",
+                description: "Autonomously execute an end goal: /autopilot <goal>",
+              },
+            ] as const)
+          : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -2489,6 +2504,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     return [];
   }, [
+    autopilotSupported,
     compactSlashCommandAvailable,
     composerTrigger,
     exactPullRequestLookup.data,
@@ -3620,6 +3636,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
           }
+          return;
+        }
+        if (item.command === "autopilot") {
+          const replacement = "/autopilot ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) setComposerHighlightedItemId(null);
           return;
         }
         if (!planModeUiEnabled) return;
@@ -6418,6 +6450,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           ) : null}
           <ComposerDeferBanner environmentId={environmentId} threadId={activeThreadId} />
           <ComposerHelpersBanner environmentId={environmentId} threadId={activeThreadId} />
+          <ComposerAutopilotBanner environmentId={environmentId} threadId={activeThreadId} />
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge

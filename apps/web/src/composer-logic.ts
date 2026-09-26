@@ -10,7 +10,7 @@ import {
 } from "./composer-editor-mentions";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "autopilot";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -277,9 +277,15 @@ export function composerStateAtPromptEnd(text: string): {
   };
 }
 
+/** T3-Snow: the goal of an `/autopilot <goal>` message (empty when none), or null. */
+export function parseAutopilotCommand(text: string): string | null {
+  const match = /^\/autopilot(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? (match[1] ?? "").trim() : null;
+}
+
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
+): Exclude<ComposerSlashCommand, "model" | "autopilot"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;
