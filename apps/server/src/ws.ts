@@ -160,6 +160,7 @@ import * as DeferService from "./defer/DeferService.ts";
 import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as CouncilService from "./council/CouncilService.ts";
+import * as SubagentControl from "./agents/SubagentControl.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -559,6 +560,7 @@ const makeWsRpcLayer = (
       const helperService = yield* Effect.serviceOption(HelperService.HelperService);
       const autopilotService = yield* Effect.serviceOption(AutopilotService.AutopilotService);
       const councilService = yield* Effect.serviceOption(CouncilService.CouncilService);
+      const subagentControl = yield* Effect.serviceOption(SubagentControl.SubagentControl);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3685,6 +3687,30 @@ const makeWsRpcLayer = (
               : Effect.succeed(false)
             ).pipe(Effect.map((cancelled) => ({ cancelled }))),
             { "rpc.aggregate": "council" },
+          ),
+        [WS_METHODS.subagentTranscript]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentTranscript,
+            Option.isSome(subagentControl)
+              ? subagentControl.value.transcript(input)
+              : Effect.succeed({ entries: null, omitted: 0 }),
+            { "rpc.aggregate": "subagent" },
+          ),
+        [WS_METHODS.subagentStop]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentStop,
+            Option.isSome(subagentControl)
+              ? subagentControl.value.stop(input)
+              : Effect.succeed({ ok: false, message: "Not available on this server." }),
+            { "rpc.aggregate": "subagent" },
+          ),
+        [WS_METHODS.subagentMessage]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.subagentMessage,
+            Option.isSome(subagentControl)
+              ? subagentControl.value.message(input)
+              : Effect.succeed({ ok: false, message: "Not available on this server." }),
+            { "rpc.aggregate": "subagent" },
           ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(

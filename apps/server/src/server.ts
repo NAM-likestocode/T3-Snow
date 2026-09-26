@@ -166,6 +166,7 @@ import * as ThreadWakeQueue from "./wake/ThreadWakeQueue.ts";
 import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as CouncilService from "./council/CouncilService.ts";
+import * as SubagentControl from "./agents/SubagentControl.ts";
 import * as ThreadTurnPreamble from "./wake/ThreadTurnPreamble.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
@@ -277,6 +278,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(ThreadSettlementReactor.layer),
   Layer.provideMerge(PullRequestSyncReactor.layer),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
+  Layer.provideMerge(SubagentControl.layer),
   Layer.provideMerge(CouncilService.layer),
   Layer.provideMerge(AutopilotService.layer),
   Layer.provideMerge(DeferService.layer),
@@ -298,7 +300,8 @@ const ProviderSessionDirectoryLayerLive = ProviderSessionDirectoryLive.pipe(
 // NDJSON writers and is provided at the outer runtime layer so both
 // `ProviderService` and the per-instance drivers read the same logger pair.
 const ProviderLayerLive = ProviderServiceLive.pipe(
-  Layer.provide(ProviderAdapterRegistryLive),
+  // T3-Snow: merged so SubagentControl can reach the adapters.
+  Layer.provideMerge(ProviderAdapterRegistryLive),
   Layer.provideMerge(ProviderSessionDirectoryLayerLive),
 );
 

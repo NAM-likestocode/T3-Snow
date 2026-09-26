@@ -219,6 +219,10 @@ export interface CodexSessionRuntimeShape {
   ) => Effect.Effect<ProviderTurnStartResult, CodexSessionRuntimeError>;
   readonly compactThread: Effect.Effect<void, CodexSessionRuntimeError>;
   readonly interruptTurn: (turnId?: TurnId) => Effect.Effect<void, CodexSessionRuntimeError>;
+  /** T3-Snow: interrupts one child agent's live turn; false when it is not running. */
+  readonly interruptChild?: (
+    childThreadId: string,
+  ) => Effect.Effect<boolean, CodexSessionRuntimeError>;
   readonly readThread: Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
   readonly rollbackThread: (
     numTurns: number,
@@ -2653,6 +2657,13 @@ export const makeCodexSessionRuntime = (
             threadId: providerThreadId,
             turnId: effectiveTurnId,
           });
+        }),
+      interruptChild: (childThreadId) =>
+        Effect.gen(function* () {
+          const childTurnId = (yield* Ref.get(collabChildLiveTurnsRef)).get(childThreadId);
+          if (!childTurnId) return false;
+          yield* client.request("turn/interrupt", { threadId: childThreadId, turnId: childTurnId });
+          return true;
         }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;

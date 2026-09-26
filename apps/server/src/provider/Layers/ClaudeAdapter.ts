@@ -90,7 +90,12 @@ import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
-import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import {
+  claudeSignedOutMessage,
+  makeClaudeEnvironment,
+  resolveClaudeHomePath,
+} from "../Drivers/ClaudeHome.ts";
+import { parseClaudeSubagentTranscript } from "../claudeSubagentTranscript.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { buildRuntimeInstructions } from "../RuntimeInstructions.ts";
@@ -460,6 +465,8 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly setModel: (model?: string) => Promise<void>;
   readonly setPermissionMode: (mode: PermissionMode) => Promise<void>;
   readonly setMaxThinkingTokens: (maxThinkingTokens: number | null) => Promise<void>;
+  /** Stops one background task or subagent; test fakes may omit it. */
+  readonly stopTask?: (taskId: string) => Promise<void>;
   readonly close: () => void;
 }
 
@@ -5553,11 +5560,68 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     ),
   );
 
+  // T3-Snow: per-subagent controls for the Agents panel.
+  const stopSubagent: NonNullable<ClaudeAdapterShape["stopSubagent"]> = Effect.fn("stopSubagent")(
+    function* (threadId, taskId) {
+      const context = yield* requireSession(threadId);
+      const stopTask = context.query.stopTask;
+      if (!stopTask) {
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "stop_task",
+          detail: "This Claude session cannot stop a single subagent.",
+        });
+      }
+      yield* Effect.tryPromise({
+        try: () => stopTask.call(context.query, taskId),
+        catch: (cause) =>
+          new ProviderAdapterRequestError({
+            provider: PROVIDER,
+            method: "stop_task",
+            detail: cause instanceof Error ? cause.message : "Claude could not stop the subagent.",
+            cause,
+          }),
+      });
+    },
+  );
+
+  const readSubagentTranscript: NonNullable<ClaudeAdapterShape["readSubagentTranscript"]> =
+    Effect.fn("readSubagentTranscript")(function* (input) {
+      const sessionId =
+        sessions.get(input.threadId)?.resumeSessionId ??
+        readClaudeResumeState(input.resumeCursor)?.resume;
+      // Task ids are the subagent's agent id for Agent/Task subagents.
+      if (!sessionId || !/^[\w-]+$/.test(input.taskId) || !/^[\w-]+$/.test(sessionId)) {
+        return null;
+      }
+      const configDir = yield* resolveClaudeHomePath(claudeSettings, claudeEnvironment).pipe(
+        Effect.provideService(Path.Path, path),
+      );
+      const projectsDir = path.join(configDir, "projects");
+      const projects = yield* fileSystem
+        .readDirectory(projectsDir)
+        .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
+      for (const project of projects) {
+        const file = path.join(
+          projectsDir,
+          project,
+          sessionId,
+          "subagents",
+          `agent-${input.taskId}.jsonl`,
+        );
+        const text = yield* fileSystem.readFileString(file).pipe(Effect.orElseSucceed(() => null));
+        if (text !== null) return parseClaudeSubagentTranscript(text);
+      }
+      return null;
+    });
+
   return {
     provider: PROVIDER,
     capabilities: {
       sessionModelSwitch: "in-session",
     },
+    stopSubagent,
+    readSubagentTranscript,
     compaction: { type: "slash-command", command: "/compact" },
     startSession,
     sendTurn,

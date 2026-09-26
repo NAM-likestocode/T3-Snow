@@ -66,6 +66,12 @@ import {
   CouncilStartResult,
 } from "./council.ts";
 import {
+  SubagentControlResult,
+  SubagentMessageInput,
+  SubagentTarget,
+  SubagentTranscriptResult,
+} from "./subagentControl.ts";
+import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
   WorktreeSetupStreamEvent,
@@ -471,6 +477,10 @@ export const WS_METHODS = {
   councilPrepare: "council.prepare",
   councilStart: "council.start",
   councilCancel: "council.cancel",
+  // T3-Snow native subagent controls
+  subagentTranscript: "subagent.transcript",
+  subagentStop: "subagent.stop",
+  subagentMessage: "subagent.message",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1381,6 +1391,24 @@ const WsCouncilCancelRpc = Rpc.make(WS_METHODS.councilCancel, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsSubagentTranscriptRpc = Rpc.make(WS_METHODS.subagentTranscript, {
+  payload: SubagentTarget,
+  success: SubagentTranscriptResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsSubagentStopRpc = Rpc.make(WS_METHODS.subagentStop, {
+  payload: SubagentTarget,
+  success: SubagentControlResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsSubagentMessageRpc = Rpc.make(WS_METHODS.subagentMessage, {
+  payload: SubagentMessageInput,
+  success: SubagentControlResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1644,6 +1672,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsCouncilPrepareRpc,
   WsCouncilStartRpc,
   WsCouncilCancelRpc,
+  WsSubagentTranscriptRpc,
+  WsSubagentStopRpc,
+  WsSubagentMessageRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

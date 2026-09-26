@@ -21,6 +21,7 @@ import type {
   ThreadId,
   ProviderTurnStartResult,
   TurnId,
+  SubagentTranscriptEntry,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
@@ -145,6 +146,25 @@ export interface ProviderAdapterShape<TError> {
   readonly uploadFeedback?: (
     input: ProviderUploadFeedbackInput,
   ) => Effect.Effect<ProviderUploadFeedbackResult, TError>;
+
+  /**
+   * T3-Snow: stop one native subagent (Claude task, Codex child agent) while
+   * the main agent keeps going. Absent when the provider cannot.
+   */
+  readonly stopSubagent?: (threadId: ThreadId, taskId: string) => Effect.Effect<void, TError>;
+
+  /**
+   * T3-Snow: a native subagent's conversation, or null when none is readable.
+   * Works without a live session, from the thread's persisted resume cursor.
+   */
+  readonly readSubagentTranscript?: (input: {
+    readonly threadId: ThreadId;
+    readonly taskId: string;
+    readonly resumeCursor: unknown;
+  }) => Effect.Effect<
+    { readonly entries: ReadonlyArray<SubagentTranscriptEntry>; readonly omitted: number } | null,
+    TError
+  >;
 
   /**
    * Stop all sessions owned by this adapter.
