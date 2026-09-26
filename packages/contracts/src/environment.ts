@@ -161,6 +161,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   helperRuns: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subscribeAutopilot / autopilot.start|stop|resume. */
   autopilot: Schema.optionalKey(Schema.Boolean),
+  /** T3-Snow: server exposes subscribeCouncil / council.prepare|start|cancel. */
+  council: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */

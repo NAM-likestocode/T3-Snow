@@ -471,6 +471,24 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["helpers subagent delegate agents background model effort opus"],
   },
   {
+    id: "council-rounds",
+    title: "Council rounds",
+    to: "/settings/general",
+    searchTerms: ["council debate advisors idea rounds quick"],
+  },
+  {
+    id: "council-web",
+    title: "Council web research",
+    to: "/settings/general",
+    searchTerms: ["council search internet no-web"],
+  },
+  {
+    id: "council-models",
+    title: "Council models",
+    to: "/settings/general",
+    searchTerms: ["council optimist skeptic cfo operator chair mixed models"],
+  },
+  {
     id: "diagnostics",
     title: "Diagnostics",
     to: "/settings/general",

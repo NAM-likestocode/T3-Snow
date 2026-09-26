@@ -15,6 +15,8 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
   pick the default in **Settings → General → Helper model**.
 - **Autopilot:** send `/autopilot <goal>` and the agent works on it alone until it
   is done and verified, answering its own questions, then turns itself off.
+- **Council:** send `/council <idea>` and four advisors (on any mix of Claude and GPT
+  models) debate it; a chair gives the verdict.
 - **System chat:** press `Ctrl+Shift+U` (or pick **System chat** in the command
   palette) to ask about your computer without choosing a project.
 

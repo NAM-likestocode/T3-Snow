@@ -58,6 +58,14 @@ import {
   AutopilotThreadResult,
 } from "./autopilot.ts";
 import {
+  CouncilCancelInput,
+  CouncilCancelResult,
+  CouncilCommandInput,
+  CouncilPrepareResult,
+  CouncilSnapshot,
+  CouncilStartResult,
+} from "./council.ts";
+import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
   WorktreeSetupStreamEvent,
@@ -458,6 +466,11 @@ export const WS_METHODS = {
   autopilotStart: "autopilot.start",
   autopilotStop: "autopilot.stop",
   autopilotResume: "autopilot.resume",
+  // T3-Snow Council
+  subscribeCouncil: "subscribeCouncil",
+  councilPrepare: "council.prepare",
+  councilStart: "council.start",
+  councilCancel: "council.cancel",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1343,6 +1356,31 @@ const WsAutopilotResumeRpc = Rpc.make(WS_METHODS.autopilotResume, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsSubscribeCouncilRpc = Rpc.make(WS_METHODS.subscribeCouncil, {
+  payload: Schema.Struct({}),
+  success: CouncilSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsCouncilPrepareRpc = Rpc.make(WS_METHODS.councilPrepare, {
+  payload: CouncilCommandInput,
+  success: CouncilPrepareResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsCouncilStartRpc = Rpc.make(WS_METHODS.councilStart, {
+  payload: CouncilCommandInput,
+  success: CouncilStartResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsCouncilCancelRpc = Rpc.make(WS_METHODS.councilCancel, {
+  payload: CouncilCancelInput,
+  success: CouncilCancelResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1602,6 +1640,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsAutopilotStartRpc,
   WsAutopilotStopRpc,
   WsAutopilotResumeRpc,
+  WsSubscribeCouncilRpc,
+  WsCouncilPrepareRpc,
+  WsCouncilStartRpc,
+  WsCouncilCancelRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

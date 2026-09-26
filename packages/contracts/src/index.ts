@@ -25,6 +25,7 @@ export * from "./voice.ts";
 export * from "./defer.ts";
 export * from "./helpers.ts";
 export * from "./autopilot.ts";
+export * from "./council.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";

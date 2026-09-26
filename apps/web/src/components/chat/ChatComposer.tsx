@@ -136,6 +136,8 @@ import {
 import { ComposerDeferBanner } from "./ComposerDeferBanner";
 import { ComposerHelpersBanner } from "./ComposerHelpersBanner";
 import { ComposerAutopilotBanner } from "./ComposerAutopilotBanner";
+import { ComposerCouncilBanner } from "./ComposerCouncilBanner";
+import { useCouncilSupported } from "~/state/council";
 import { useAutopilotSupported } from "~/state/autopilot";
 import { ComposerActivityRow } from "./ComposerActivityStatus";
 import {
@@ -2048,6 +2050,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const autopilotSupported = useAutopilotSupported(environmentId);
+  const councilSupported = useCouncilSupported(environmentId);
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
     provider: selectedProviderStatus,
@@ -2401,6 +2404,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               },
             ] as const)
           : []),
+        ...(councilSupported && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:council",
+                type: "slash-command",
+                command: "council",
+                label: "/council",
+                description: "Four advisors debate an idea and a chair decides: /council <idea>",
+              },
+            ] as const)
+          : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -2506,6 +2520,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     autopilotSupported,
     compactSlashCommandAvailable,
+    councilSupported,
     composerTrigger,
     exactPullRequestLookup.data,
     planModeUiEnabled,
@@ -3638,8 +3653,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
-        if (item.command === "autopilot") {
-          const replacement = "/autopilot ";
+        if (item.command === "autopilot" || item.command === "council") {
+          const replacement = `/${item.command} `;
           const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
             snapshot.value,
             trigger.rangeEnd,
@@ -6451,6 +6466,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           <ComposerDeferBanner environmentId={environmentId} threadId={activeThreadId} />
           <ComposerHelpersBanner environmentId={environmentId} threadId={activeThreadId} />
           <ComposerAutopilotBanner environmentId={environmentId} threadId={activeThreadId} />
+          <ComposerCouncilBanner environmentId={environmentId} threadId={activeThreadId} />
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge

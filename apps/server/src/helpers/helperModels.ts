@@ -109,6 +109,8 @@ export function resolveHelperModel(input: {
   readonly defaultSelection: ModelSelection;
   readonly requested: string | undefined;
   readonly effort: string | undefined;
+  /** How errors name the default, e.g. "helper model" or "thread's model". */
+  readonly defaultName?: string;
 }): HelperModelResolution {
   const usable = input.providers.filter(isHelperProviderUsable);
   const requested = input.requested?.trim();
@@ -129,7 +131,7 @@ export function resolveHelperModel(input: {
     if (!provider || !isHelperProviderUsable(provider)) {
       return {
         ok: false,
-        error: `The helper model ${input.defaultSelection.model} is not usable because its provider (${input.defaultSelection.instanceId}) is not enabled, installed, and signed in. Name another model; usable: ${listHelperModelNames(input.providers)}.`,
+        error: `The ${input.defaultName ?? "helper model"} ${input.defaultSelection.model} is not usable because its provider (${input.defaultSelection.instanceId}) is not enabled, installed, and signed in. Name another model; usable: ${listHelperModelNames(input.providers)}.`,
       };
     }
     const model = provider.models.find((entry) => entry.slug === input.defaultSelection.model);

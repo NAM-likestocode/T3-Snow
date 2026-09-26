@@ -10,7 +10,7 @@ import {
 } from "./composer-editor-mentions";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "autopilot";
+export type ComposerSlashCommand = "model" | "plan" | "default" | "autopilot" | "council";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -277,6 +277,12 @@ export function composerStateAtPromptEnd(text: string): {
   };
 }
 
+/** T3-Snow: the arguments of a `/council …` message (empty when none), or null. */
+export function parseCouncilCommand(text: string): string | null {
+  const match = /^\/council(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  return match ? (match[1] ?? "").trim() : null;
+}
+
 /** T3-Snow: the goal of an `/autopilot <goal>` message (empty when none), or null. */
 export function parseAutopilotCommand(text: string): string | null {
   const match = /^\/autopilot(?:\s+([\s\S]*))?$/i.exec(text.trim());
@@ -285,7 +291,7 @@ export function parseAutopilotCommand(text: string): string | null {
 
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model" | "autopilot"> | null {
+): Exclude<ComposerSlashCommand, "model" | "autopilot" | "council"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;

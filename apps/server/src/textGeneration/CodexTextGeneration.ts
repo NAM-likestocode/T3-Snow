@@ -418,10 +418,122 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
+  /**
+   * T3-Snow: one ephemeral, read-only `codex exec` in an empty folder (so no
+   * AGENTS.md is read), with web search on only when `web`. `codex exec` has
+   * no system prompt flag, so the instructions lead the prompt.
+   */
+  const runIsolatedPrompt: NonNullable<
+    TextGeneration.TextGeneration["Service"]["runIsolatedPrompt"]
+  > = Effect.fn("CodexTextGeneration.runIsolatedPrompt")(function* (input) {
+    const operation = "runIsolatedPrompt";
+    const workingDirectory = yield* fileSystem
+      .makeTempDirectoryScoped({ prefix: "t3code-isolated-" })
+      .pipe(
+        Effect.mapError((cause) =>
+          normalizeCliError("codex", operation, cause, "Failed to create a working folder"),
+        ),
+      );
+    const outputPath = path.join(workingDirectory, "last-message.txt");
+    const models = yield* getModels;
+    const model =
+      models.find((candidate) => candidate.slug === input.modelSelection.model)?.slug ??
+      models.find(
+        (candidate) =>
+          !candidate.isCustom && codexModelFamily(candidate.slug) === input.modelSelection.model,
+      )?.slug ??
+      input.modelSelection.model;
+    const reasoningEffort = getModelSelectionStringOptionValue(
+      input.modelSelection,
+      "reasoningEffort",
+    );
+    const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
+    const spawnCommand = yield* resolveSpawnCommand(
+      codexConfig.binaryPath || "codex",
+      [
+        "exec",
+        ...codexExecLaunchArgs(launchArgs),
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "-s",
+        "read-only",
+        "--model",
+        model,
+        ...(reasoningEffort ? ["--config", `model_reasoning_effort="${reasoningEffort}"`] : []),
+        "--config",
+        `web_search="${input.web ? "live" : "disabled"}"`,
+        "--output-last-message",
+        outputPath,
+        "-",
+      ],
+      { env: resolvedEnvironment },
+    );
+    const command = ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+      env: {
+        ...resolvedEnvironment,
+        ...(codexConfig.homePath ? { CODEX_HOME: expandHomePath(codexConfig.homePath) } : {}),
+      },
+      cwd: workingDirectory,
+      shell: spawnCommand.shell,
+      stdin: {
+        stream: Stream.encodeText(
+          Stream.make(`<instructions>\n${input.systemPrompt}\n</instructions>\n\n${input.prompt}`),
+        ),
+      },
+    });
+    const runCommand = Effect.gen(function* () {
+      const child = yield* commandSpawner
+        .spawn(command)
+        .pipe(
+          Effect.mapError((cause) =>
+            normalizeCliError("codex", operation, cause, "Failed to spawn Codex CLI process"),
+          ),
+        );
+      const [stdout, stderr, exitCode] = yield* Effect.all(
+        [
+          readStreamAsString(operation, child.stdout),
+          readStreamAsString(operation, child.stderr),
+          child.exitCode.pipe(
+            Effect.mapError((cause) =>
+              normalizeCliError("codex", operation, cause, "Failed to read Codex CLI exit code"),
+            ),
+          ),
+        ],
+        { concurrency: "unbounded" },
+      );
+      if (exitCode !== 0) {
+        const detail = stderr.trim() || stdout.trim();
+        return yield* new TextGenerationError({
+          operation,
+          detail: detail ? `Codex CLI command failed: ${detail}` : `Codex exited with ${exitCode}.`,
+        });
+      }
+    });
+    yield* runCommand.pipe(
+      Effect.timeoutOption(input.timeoutMs),
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.fail(new TextGenerationError({ operation, detail: "Timed out." })),
+          onSome: () => Effect.void,
+        }),
+      ),
+    );
+    const text = yield* fileSystem
+      .readFileString(outputPath)
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new TextGenerationError({ operation, detail: "Codex wrote no answer.", cause }),
+        ),
+      );
+    return { text: text.trim(), searches: 0 };
+  }, Effect.scoped);
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    runIsolatedPrompt,
   } satisfies TextGeneration.TextGeneration["Service"];
 });
