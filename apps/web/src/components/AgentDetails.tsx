@@ -99,7 +99,6 @@ export function AgentDetails({ agent }: { agent: RuntimeSubagent }) {
       cancelled = true;
     };
     // agent.updatedAt is the refresh signal: a new activity means a new step to show.
-    // oxlint-disable-next-line react/exhaustive-deps
   }, [environmentId, threadId, agent.id, agent.updatedAt, loadTranscript]);
 
   const toolSteps = useMemo(
