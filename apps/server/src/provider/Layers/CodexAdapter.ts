@@ -2578,6 +2578,32 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       ),
     );
 
+  // T3-Snow: stop one child agent; its task id is the child's thread id.
+  const stopSubagent: NonNullable<CodexAdapterShape["stopSubagent"]> = (threadId, taskId) =>
+    requireSession(threadId).pipe(
+      Effect.flatMap((session) =>
+        session.runtime.interruptChild
+          ? session.runtime.interruptChild(taskId)
+          : Effect.succeed(false),
+      ),
+      Effect.mapError((cause) =>
+        cause._tag === "ProviderAdapterSessionNotFoundError"
+          ? cause
+          : mapCodexRuntimeError(threadId, "turn/interrupt", cause),
+      ),
+      Effect.flatMap((stopped) =>
+        stopped
+          ? Effect.void
+          : Effect.fail(
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "turn/interrupt",
+                detail: "That agent is not running a turn right now.",
+              }),
+            ),
+      ),
+    );
+
   const compactThread = Effect.fn("compactThread")(function* (threadId: ThreadId) {
     const session = yield* requireSession(threadId);
     yield* session.runtime.compactThread.pipe(
@@ -2732,6 +2758,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     sendTurn,
     compaction: { type: "native", start: compactThread },
     interruptTurn,
+    stopSubagent,
     readThread,
     rollbackThread,
     uploadFeedback,

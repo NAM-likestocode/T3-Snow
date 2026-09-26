@@ -139,6 +139,10 @@ for custom configuration.
 ## Inspect agent work
 
 On web and desktop, use **Agents** to follow work delegated to subagents.
+Click an agent to unfold it: Claude agents show their conversation and tool
+calls, other providers show their recent steps. **Stop** ends just that agent
+(Claude and Codex) while the main agent keeps going. A message you type there
+goes to the main agent, addressed to that subagent, and the main agent passes it on.
 
 Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
