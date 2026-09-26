@@ -34,6 +34,8 @@ import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handler
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
 import { DeferToolkitHandlersLive } from "./toolkits/defer/handlers.ts";
 import { DeferToolkit } from "./toolkits/defer/tools.ts";
+import { HelpersToolkitHandlersLive } from "./toolkits/helpers/handlers.ts";
+import { HelpersToolkit } from "./toolkits/helpers/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -674,9 +676,15 @@ export const DeferToolkitRegistrationLive = McpServer.toolkit(DeferToolkit).pipe
   Layer.provide(DeferToolkitHandlersLive),
 );
 
+/** T3-Snow: helpers on any model (`subagent`). */
+export const HelpersToolkitRegistrationLive = McpServer.toolkit(HelpersToolkit).pipe(
+  Layer.provide(HelpersToolkitHandlersLive),
+);
+
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
   DeferToolkitRegistrationLive,
+  HelpersToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));

@@ -23,6 +23,7 @@ export * from "./keybindings.ts";
 export * from "./server.ts";
 export * from "./voice.ts";
 export * from "./defer.ts";
+export * from "./helpers.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
 export * from "./vcs.ts";

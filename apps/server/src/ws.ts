@@ -157,6 +157,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as DeferService from "./defer/DeferService.ts";
+import * as HelperService from "./helpers/HelperService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -553,6 +554,7 @@ const makeWsRpcLayer = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       // Optional so harnesses that assemble the routes without it keep working.
       const deferService = yield* Effect.serviceOption(DeferService.DeferService);
+      const helperService = yield* Effect.serviceOption(HelperService.HelperService);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3586,6 +3588,23 @@ const makeWsRpcLayer = (
               : Effect.succeed(false)
             ).pipe(Effect.map((cancelled) => ({ cancelled }))),
             { "rpc.aggregate": "defer" },
+          ),
+        [WS_METHODS.subscribeHelperRuns]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeHelperRuns,
+            Option.isSome(helperService)
+              ? helperService.value.streamChanges
+              : Stream.make({ runs: [] }),
+            { "rpc.aggregate": "helpers" },
+          ),
+        [WS_METHODS.helperStop]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.helperStop,
+            (Option.isSome(helperService)
+              ? helperService.value.stopById(input.runId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((stopped) => ({ stopped }))),
+            { "rpc.aggregate": "helpers" },
           ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(
