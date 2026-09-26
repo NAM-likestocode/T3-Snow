@@ -1,6 +1,6 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
 import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
-import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
+import { buildRuntimeInstructionSections } from "./RuntimeInstructions.ts";
 
 const T3_CODE_BROWSER_TOOL_INSTRUCTIONS = `## T3 Code collaborative browser
 
@@ -217,11 +217,16 @@ export function buildCodexAdditionalContext(
 ): Record<string, V2TurnStartParams__AdditionalContextEntry> {
   const tools = toolInstructions(toolsAvailable);
   // Separate keys keep each value under Codex's per-entry token cap.
+  const sections = buildRuntimeInstructionSections({ harness: "Codex", ...runtime });
   return {
-    t3_code_runtime: {
-      kind: "application",
-      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
-    },
+    t3_code_runtime: { kind: "application", value: sections.runtime },
+    // Wake-ups and helpers are t3-code MCP tools, so they go only where the server is attached.
+    ...(toolsAvailable === false
+      ? {}
+      : {
+          t3_code_wakeups: { kind: "application", value: sections.wakeups },
+          t3_code_helpers: { kind: "application", value: sections.helpers },
+        }),
     ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
   };
 }

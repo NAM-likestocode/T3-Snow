@@ -10,6 +10,9 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
   See **Settings → Voice**. Press `Enter` while dictating to transcribe and send.
 - **Wake-ups:** agents can schedule check-ins ("wake me when the build is done")
   with the built-in `defer` tool; armed ones show above the composer.
+- **Helpers:** agents hand parts of a task to helpers on any model (Claude Opus 5.5
+  by default), which report back when done. Running ones show above the composer;
+  pick the default in **Settings → General → Helper model**.
 - **System chat:** press `Ctrl+Shift+U` (or pick **System chat** in the command
   palette) to ask about your computer without choosing a project.
 

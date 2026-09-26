@@ -49,6 +49,7 @@ import {
   AttachmentUploadSigningKeyError,
 } from "./assets.ts";
 import { DeferCancelInput, DeferCancelResult, DeferTriggersSnapshot } from "./defer.ts";
+import { HelperRunsSnapshot, HelperStopInput, HelperStopResult } from "./helpers.ts";
 import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
@@ -442,6 +443,9 @@ export const WS_METHODS = {
   // T3-Snow deferred wake-ups
   subscribeDeferTriggers: "subscribeDeferTriggers",
   deferCancel: "defer.cancel",
+  // T3-Snow helpers
+  subscribeHelperRuns: "subscribeHelperRuns",
+  helperStop: "helpers.stop",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1289,6 +1293,19 @@ const WsDeferCancelRpc = Rpc.make(WS_METHODS.deferCancel, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsSubscribeHelperRunsRpc = Rpc.make(WS_METHODS.subscribeHelperRuns, {
+  payload: Schema.Struct({}),
+  success: HelperRunsSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsHelperStopRpc = Rpc.make(WS_METHODS.helperStop, {
+  payload: HelperStopInput,
+  success: HelperStopResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1542,6 +1559,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeDeviceStateRpc,
   WsSubscribeDeferTriggersRpc,
   WsDeferCancelRpc,
+  WsSubscribeHelperRunsRpc,
+  WsHelperStopRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

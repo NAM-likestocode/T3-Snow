@@ -9,8 +9,8 @@
  * service posts a user message into the agent's thread, which starts a new
  * turn. Behavior, limits, and wording follow the Pi `defer` extension.
  *
- * Delivery never interrupts a running turn: a wake-up waits until the thread
- * is idle and has no pending approval or question, then goes out on its own.
+ * Delivery goes through ThreadWakeQueue, so a wake-up never interrupts a
+ * running turn: it waits until the thread is idle, then goes out on its own.
  *
  * Triggers live in memory. Their id, thread, and note are mirrored to
  * `<stateDir>/defer-triggers.json`; after a restart each trigger that never
@@ -22,7 +22,6 @@
 import {
   CommandId,
   EventId,
-  MessageId,
   type DeferTrigger,
   type DeferTriggersSnapshot,
   type OrchestrationEvent,
@@ -40,7 +39,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
@@ -52,6 +50,7 @@ import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEng
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { forkParked } from "../serverActivation.ts";
+import * as ThreadWakeQueue from "../wake/ThreadWakeQueue.ts";
 import {
   DEFER_CHECK_RUN_TIMEOUT_MS,
   DEFER_DEFAULT_POLL_MS,
@@ -73,10 +72,6 @@ import {
 } from "./deferFormat.ts";
 
 const STATE_FILE_NAME = "defer-triggers.json";
-/** A dispatched wake-up that never produced a running session frees its slot after this. */
-const DELIVERY_STALL_MS = 2 * 60_000;
-/** Safety net for session events a subscriber might miss. */
-const DELIVERY_SWEEP_INTERVAL = "30 seconds";
 
 /** Runtime modes where T3 may run an agent's `check`/`run` commands without asking. */
 const COMMAND_RUNTIME_MODES = new Set(["full-access", "auto"]);
@@ -143,19 +138,6 @@ const decodePersistedTriggers = Schema.decodeUnknownEffect(
 );
 const encodePersistedTriggers = Schema.encodeEffect(Schema.fromJsonString(PersistedTriggers));
 
-type Delivery = { readonly phase: "requested" | "running"; readonly since: number };
-
-function isThreadBusy(thread: OrchestrationThreadShell): boolean {
-  const status = thread.session?.status;
-  return (
-    status === "starting" ||
-    status === "running" ||
-    thread.latestTurn?.state === "running" ||
-    thread.hasPendingApprovals ||
-    thread.hasPendingUserInput
-  );
-}
-
 function toSnapshotEntry(trigger: ArmedTrigger): DeferTrigger {
   return {
     id: trigger.id,
@@ -194,14 +176,12 @@ export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const crypto = yield* Crypto.Crypto;
   const serverConfig = yield* ServerConfig.ServerConfig;
+  const wakeQueue = yield* ThreadWakeQueue.ThreadWakeQueue;
   const scope = yield* Effect.scope;
 
   const statePath = path.join(serverConfig.stateDir, STATE_FILE_NAME);
   const triggers = new Map<string, ArmedTrigger>();
-  const pending = new Map<ThreadId, string[]>();
-  const deliveries = new Map<ThreadId, Delivery>();
   const triggerLock = yield* Semaphore.make(1);
-  const deliveryLock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<DeferTriggersSnapshot>({ triggers: [] });
 
   const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
@@ -281,78 +261,8 @@ export const make = Effect.gen(function* () {
       Effect.catchCause((cause) => Effect.logDebug("defer: activity not recorded", { cause })),
     );
 
-  // --- delivery: one wake-up per idle thread ---------------------------------
-
-  const flush = (threadId: ThreadId): Effect.Effect<void> =>
-    deliveryLock.withPermits(1)(
-      Effect.gen(function* () {
-        const queue = pending.get(threadId);
-        if (!queue || queue.length === 0) {
-          pending.delete(threadId);
-          return;
-        }
-        const now = yield* nowMs;
-        const delivery = deliveries.get(threadId);
-        if (delivery && now - delivery.since < DELIVERY_STALL_MS) return;
-        deliveries.delete(threadId);
-
-        const thread = yield* readThread(threadId);
-        if (!thread || thread.archivedAt !== null) {
-          pending.delete(threadId);
-          return;
-        }
-        if (isThreadBusy(thread)) return;
-
-        const text = queue.shift()!;
-        if (queue.length === 0) pending.delete(threadId);
-        const createdAt = new Date(now).toISOString();
-        yield* engine
-          .dispatch({
-            type: "thread.turn.start",
-            commandId: CommandId.make(`server:defer-wake:${yield* uuid}`),
-            threadId,
-            message: {
-              messageId: MessageId.make(yield* uuid),
-              role: "user",
-              text,
-              attachments: [],
-            },
-            runtimeMode: thread.runtimeMode,
-            interactionMode: thread.interactionMode,
-            createdAt,
-          })
-          .pipe(
-            Effect.tap(() =>
-              Effect.sync(() => deliveries.set(threadId, { phase: "requested", since: now })),
-            ),
-            Effect.catchCause((cause) =>
-              Effect.logWarning("defer: wake-up could not be delivered", { threadId, cause }),
-            ),
-          );
-      }),
-    );
-
   const deliver = (threadId: ThreadId, text: string) =>
-    Effect.suspend(() => {
-      const queue = pending.get(threadId) ?? [];
-      queue.push(text);
-      pending.set(threadId, queue);
-      return flush(threadId);
-    });
-
-  const onSessionSet = (threadId: ThreadId, status: string) =>
-    Effect.suspend(() => {
-      const delivery = deliveries.get(threadId);
-      if (status === "running" || status === "starting") {
-        if (delivery?.phase === "requested") {
-          deliveries.set(threadId, { phase: "running", since: delivery.since });
-        }
-        return Effect.void;
-      }
-      // The wake-up's own turn has ended (or never ran); the thread is free again.
-      if (delivery?.phase === "running") deliveries.delete(threadId);
-      return pending.has(threadId) ? flush(threadId) : Effect.void;
-    });
+    wakeQueue.deliver({ threadId, text, source: "defer" });
 
   // --- running commands ------------------------------------------------------
 
@@ -630,8 +540,6 @@ export const make = Effect.gen(function* () {
   const cancelThread = (threadId: ThreadId) =>
     triggerLock.withPermits(1)(
       Effect.gen(function* () {
-        pending.delete(threadId);
-        deliveries.delete(threadId);
         const owned = [...triggers.values()].filter((trigger) => trigger.threadId === threadId);
         if (owned.length === 0) return;
         for (const trigger of owned) {
@@ -646,8 +554,6 @@ export const make = Effect.gen(function* () {
 
   const onEvent = (event: OrchestrationEvent): Effect.Effect<void> => {
     switch (event.type) {
-      case "thread.session-set":
-        return onSessionSet(event.payload.threadId, event.payload.session.status);
       case "thread.deleted":
       case "thread.archived":
         return cancelThread(event.payload.threadId);
@@ -672,12 +578,6 @@ export const make = Effect.gen(function* () {
   const events = yield* engine.subscribeDomainEvents;
   yield* forkParked(Stream.runForEach(events, onEvent));
   yield* forkParked(reportLostTriggers);
-  yield* forkParked(
-    Effect.suspend(() => Effect.forEach([...pending.keys()], flush, { discard: true })).pipe(
-      Effect.repeat(Schedule.spaced(DELIVERY_SWEEP_INTERVAL)),
-      Effect.asVoid,
-    ),
-  );
 
   return DeferService.of({
     create,
