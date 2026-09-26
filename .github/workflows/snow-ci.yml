@@ -1,0 +1,54 @@
+name: CI
+
+# T3-Snow checks on standard GitHub runners. Upstream's ci.yml only runs in
+# pingdotgg/t3code, where its Blacksmith runners exist.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: snow-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck, test, build
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: true
+
+      - name: Install browser secret helper build libraries
+        run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev pkg-config
+
+      - name: Format
+        run: vp fmt --check
+
+      - name: Lint
+        run: vp lint
+
+      - name: Typecheck
+        run: vp run typecheck
+
+      - name: Test
+        run: vp run --filter @t3tools/contracts --filter @t3tools/shared --filter @t3tools/client-runtime --filter @t3tools/web test
+
+      - name: Build desktop pipeline
+        run: vp run build:desktop

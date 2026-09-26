@@ -174,6 +174,19 @@ you had typed in the composer before starting the edit is restored afterwards. I
 message starts or is removed while you are editing, the edit ends: changed content moves into the
 composer when it is empty, and is discarded otherwise.
 
+## Voice dictation on web and desktop
+
+Click the microphone next to the attach button, or press `mod+shift+space`, and
+start talking. Press it again (or click stop) to transcribe; the text is inserted
+at your cursor for you to review before sending. `Esc` discards the recording.
+
+Whisper runs on your device, so dictation is free and private. The first time you
+dictate, the model downloads once (about 80 MB for the default) and is cached;
+after that it works offline. Choose a smaller or more accurate model, pick a
+language for multilingual models, or remove a downloaded model in
+**Settings → Voice**. The first time you record, allow microphone access when your
+system asks.
+
 ## Commands and skills
 
 Type `/` for commands or `$` to add a skill from the selected environment and

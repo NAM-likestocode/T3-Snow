@@ -1,0 +1,187 @@
+name: Release
+
+# T3-Snow desktop release: builds the Windows installer and Linux AppImage and
+# publishes them as a GitHub release. Installed apps read latest.yml and
+# latest-linux.yml from the newest release and offer the update in-app.
+#
+# Run it from Actions -> Release -> Run workflow (the version is automatic), or
+# push a tag such as v1.2.0.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version such as 1.2.0. Leave empty to use 1.<run number>.0."
+        required: false
+        type: string
+  push:
+    tags:
+      - "v*.*.*"
+
+concurrency:
+  group: snow-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Resolve version
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - id: resolve
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${INPUT_VERSION:-}" ]]; then
+            version="${INPUT_VERSION#v}"
+          else
+            version="1.${GITHUB_RUN_NUMBER}.0"
+          fi
+          # The updater only offers plain semver releases, and Windows caps each
+          # version component at 65535.
+          if [[ ! "$version" =~ ^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$ ]]; then
+            echo "Version must look like 1.2.3 (got '$version')." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$version"
+
+  build:
+    name: Build ${{ matrix.label }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: Linux
+            runner: ubuntu-24.04
+            platform: linux
+            target: AppImage
+          - label: Windows
+            runner: windows-2022
+            platform: win
+            target: nsis
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: ${{ matrix.platform != 'win' }}
+          run-install: false
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build libraries
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsecret-1-dev pkg-config imagemagick
+
+      - name: Install Spectre-mitigated MSVC libs
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -products * -latest -property installationPath
+          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
+          $proc = Start-Process -FilePath $setupExe `
+            -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", `
+            "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" `
+            -Wait -PassThru -NoNewWindow
+          if ($null -eq $proc -or $proc.ExitCode -ne 0) {
+            Write-Error "Visual Studio Installer failed"
+            exit 1
+          }
+
+      - name: Install dependencies
+        run: vp install --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...
+
+      - name: Set release version
+        run: node scripts/update-release-package-versions.ts "${{ env.VERSION }}"
+
+      - name: Build desktop app
+        shell: bash
+        run: |
+          vp run dist:desktop:artifact \
+            --platform "${{ matrix.platform }}" \
+            --target "${{ matrix.target }}" \
+            --arch x64 \
+            --build-version "$VERSION" \
+            --verbose
+
+      - name: Collect release files
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p release-publish
+          for file in release/*.AppImage release/*.exe release/*.blockmap release/*.yml; do
+            [[ "$file" == */builder-debug.yml ]] && continue
+            cp "$file" release-publish/
+          done
+          ls -la release-publish
+
+      - name: Upload build
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.platform }}
+          path: release-publish/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v8
+        with:
+          pattern: desktop-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          name: T3-Snow v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/*.AppImage
+            release-assets/*.exe
+            release-assets/*.blockmap
+            release-assets/*.yml
+          body: |
+            ## Download
+
+            - **Windows:** the `.exe` below. Run it to install.
+            - **Linux:** the `.AppImage` below. Make it executable (`chmod +x`) and run it.
+
+            Already installed? The app offers this update by itself.
