@@ -74,6 +74,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "../connection/desktopLocal";
 import { useDesktopLocalBootstraps } from "../connection/useDesktopLocalBootstraps";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
+import { useOpenSystemChat } from "../hooks/useOpenSystemChat";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { useClientSettings } from "../hooks/useSettings";
@@ -727,6 +728,7 @@ function OpenCommandPaletteDialog(props: {
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const openSystemChat = useOpenSystemChat();
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1745,6 +1747,21 @@ function OpenCommandPaletteDialog(props: {
   ]);
 
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+
+  if (environments.some((environment) => environment.serverConfig !== null)) {
+    actionItems.push({
+      kind: "action",
+      value: "action:system-chat",
+      searchTerms: ["system", "chat", "ask", "question", "computer", "machine", "general"],
+      title: "System chat",
+      description: "Ask about this computer, without a project",
+      icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "chat.system",
+      run: async () => {
+        await openSystemChat();
+      },
+    });
+  }
 
   if (projects.length > 0) {
     const activeProjectTitle =

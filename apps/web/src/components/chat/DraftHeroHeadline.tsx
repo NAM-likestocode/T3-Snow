@@ -2,10 +2,11 @@ import type { DraftId } from "~/composerDraftStore";
 import { useComposerDraftStore } from "~/composerDraftStore";
 import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { FolderPlusIcon } from "lucide-react";
+import { FolderPlusIcon, MonitorIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
+import { useOpenSystemChat } from "~/hooks/useOpenSystemChat";
 import { useClientSettings } from "~/hooks/useSettings";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import { selectProjectGroupingSettings } from "~/logicalProject";
@@ -15,6 +16,7 @@ import {
   projectGroupsSpanEnvironments,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
+import { isSystemChatWorkspaceRoot } from "~/systemChat";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -56,6 +58,15 @@ export function DraftHeroHeadline({
   const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
+  const openSystemChat = useOpenSystemChat();
+  const isSystemChat =
+    activeProjectRef !== null &&
+    projects.some(
+      (project) =>
+        project.environmentId === activeProjectRef.environmentId &&
+        project.id === activeProjectRef.projectId &&
+        isSystemChatWorkspaceRoot(project.workspaceRoot),
+    );
 
   const environmentLabelById = useMemo(
     () =>
@@ -215,6 +226,12 @@ export function DraftHeroHeadline({
           })}
         </MenuRadioGroup>
         <MenuSeparator />
+        {isSystemChat ? null : (
+          <MenuItem onClick={() => void openSystemChat(activeProjectRef?.environmentId)}>
+            <MonitorIcon />
+            System chat
+          </MenuItem>
+        )}
         <MenuItem onClick={openAddProject}>
           <FolderPlusIcon />
           New project
@@ -235,18 +252,22 @@ export function DraftHeroHeadline({
   // a complete sentence too. The project picker is a control rendered inline
   // in the h1; without an explicit label its widget state bleeds into the
   // announced phrase.
-  const headingLabel = hasResolvedProject
-    ? `What should we build in ${activeProjectDisplayName}?`
-    : canChooseProject
-      ? `${activeProjectDisplayName ?? "Choose a project"} to start`
-      : "Add a project to start";
+  const headingLabel = isSystemChat
+    ? `What can I help with on ${activeProjectDisplayName}?`
+    : hasResolvedProject
+      ? `What should we build in ${activeProjectDisplayName}?`
+      : canChooseProject
+        ? `${activeProjectDisplayName ?? "Choose a project"} to start`
+        : "Add a project to start";
 
   return (
     <h1
       aria-label={headingLabel}
       className="mx-auto w-full max-w-5xl text-center font-normal text-2xl text-foreground tracking-tight sm:text-3xl"
     >
-      {hasResolvedProject ? (
+      {isSystemChat ? (
+        <>What can I help with on {projectSelector}?</>
+      ) : hasResolvedProject ? (
         <>What should we build in {projectSelector}?</>
       ) : canChooseProject ? (
         <>{projectSelector} to start</>

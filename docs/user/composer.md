@@ -143,6 +143,18 @@ awake; it can sleep normally once recording stops.
 Transcription runs on your device. T3 Code deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
+## System chat
+
+Ask about the computer itself without picking a project: "why is my disk full?",
+"install ffmpeg", "what's using port 3000?". Open **System chat** with
+`mod+shift+u`, from the command palette, or from the project picker in a new
+thread's heading. The agent works from an empty folder (`~/.t3/system-chat`) and
+reaches the rest of your machine through the access mode you choose, so use
+**Full access** when you want it to change things.
+
+System chat appears in the sidebar as **System**, one per machine. Delete it like
+any project; opening System chat again brings it back.
+
 ## Voice dictation on web and desktop
 
 Click the microphone next to the attach button, or press `mod+shift+space`, and
