@@ -8,6 +8,8 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
 - **Voice:** click the mic in the composer or press `Ctrl+Shift+Space`
   (`Cmd+Shift+Space` on macOS). Whisper runs on your machine: no API key, no cost.
   See **Settings → Voice**. Press `Enter` while dictating to transcribe and send.
+- **Wake-ups:** agents can schedule check-ins ("wake me when the build is done")
+  with the built-in `defer` tool; armed ones show above the composer.
 - **System chat:** press `Ctrl+Shift+U` (or pick **System chat** in the command
   palette) to ask about your computer without choosing a project.
 

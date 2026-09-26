@@ -155,6 +155,20 @@ reaches the rest of your machine through the access mode you choose, so use
 System chat appears in the sidebar as **System**, one per machine. Delete it like
 any project; opening System chat again brings it back.
 
+## Wake-ups
+
+Agents can schedule their own wake-ups instead of waiting in a loop: "check on
+this build in 10 minutes", "wake me when the tests finish", or a reminder you
+ask for. When a wake-up fires, it arrives in the thread as a new message and the
+agent carries on, even if you are not watching. It never interrupts a running
+turn; it waits until the agent is done.
+
+Armed wake-ups appear above the composer with a countdown. A warning icon means
+the agent's check command itself is failing. Click × to cancel one. Wake-ups that
+run commands only work in **Full access** or **Auto** mode. They last until T3
+Code restarts; after a restart, each one that never fired is reported to its
+thread so the agent can check on the work itself.
+
 ## Voice dictation on web and desktop
 
 Click the microphone next to the attach button, or press `mod+shift+space`, and
