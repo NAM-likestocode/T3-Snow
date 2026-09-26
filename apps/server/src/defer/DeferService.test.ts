@@ -14,7 +14,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Path from "effect/Path";
-import * as Queue from "effect/Queue";
+import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
@@ -23,6 +23,7 @@ import * as ServerConfig from "../config.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProcessRunner from "../processRunner.ts";
+import * as ThreadWakeQueue from "../wake/ThreadWakeQueue.ts";
 import * as DeferService from "./DeferService.ts";
 
 const THREAD_ID = ThreadId.make("thread-1");
@@ -98,7 +99,7 @@ const makeHarness = Effect.fn("makeDeferHarness")(function* (options: HarnessOpt
 
   const thread = yield* Ref.make(makeThread({ runtimeMode: options.runtimeMode ?? "full-access" }));
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
-  const events = yield* Queue.unbounded<OrchestrationEvent>();
+  const events = yield* PubSub.unbounded<OrchestrationEvent>();
   const runs = yield* Ref.make<ReadonlyArray<string>>([]);
   const exitCodes = options.exitCodes ?? [0];
 
@@ -110,7 +111,7 @@ const makeHarness = Effect.fn("makeDeferHarness")(function* (options: HarnessOpt
     Layer.mock(OrchestrationEngineService)({
       dispatch: (command) =>
         Ref.update(commands, (recorded) => [...recorded, command]).pipe(Effect.as({ sequence: 1 })),
-      subscribeDomainEvents: Effect.succeed(Stream.fromQueue(events)),
+      subscribeDomainEvents: Effect.succeed(Stream.fromPubSub(events)),
     }),
     Layer.mock(ProcessRunner.ProcessRunner)({
       run: (input) =>
@@ -136,7 +137,10 @@ const makeHarness = Effect.fn("makeDeferHarness")(function* (options: HarnessOpt
     Layer.succeed(Crypto.Crypto, testCrypto),
   );
   const service = yield* Layer.build(
-    Layer.effect(DeferService.DeferService, DeferService.make).pipe(Layer.provide(dependencies)),
+    Layer.effect(DeferService.DeferService, DeferService.make).pipe(
+      Layer.provideMerge(ThreadWakeQueue.layer),
+      Layer.provide(dependencies),
+    ),
   ).pipe(Effect.map((context) => context.pipe((ctx) => ctx)));
   const defer = yield* DeferService.DeferService.pipe(Effect.provide(service));
   // Let the background subscribers start.
@@ -209,7 +213,7 @@ describe("DeferService", () => {
         expect(yield* harness.turnStarts).toEqual([]);
 
         yield* Ref.update(harness.thread, (thread) => ({ ...thread, session: null }));
-        yield* Queue.offer(harness.events, sessionSet("ready"));
+        yield* PubSub.publish(harness.events, sessionSet("ready"));
         yield* settle;
         expect(yield* harness.turnStarts).toHaveLength(1);
       }).pipe(Effect.scoped),
