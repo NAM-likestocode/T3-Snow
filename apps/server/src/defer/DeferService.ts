@@ -106,6 +106,8 @@ export class DeferService extends Context.Service<
     readonly cancel: (threadId: ThreadId, id: string) => Effect.Effect<string, DeferRequestError>;
     /** Cancels any trigger by id, as the user. */
     readonly cancelById: (id: string) => Effect.Effect<boolean>;
+    /** Whether the thread has triggers still armed. */
+    readonly hasArmed: (threadId: ThreadId) => Effect.Effect<boolean>;
     /** Every armed trigger now, then after each change. */
     readonly streamChanges: Stream.Stream<DeferTriggersSnapshot>;
   }
@@ -584,6 +586,8 @@ export const make = Effect.gen(function* () {
     list,
     cancel,
     cancelById,
+    hasArmed: (threadId) =>
+      Effect.sync(() => [...triggers.values()].some((trigger) => trigger.threadId === threadId)),
     streamChanges: SubscriptionRef.changes(changes),
   });
 });

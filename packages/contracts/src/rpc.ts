@@ -51,6 +51,13 @@ import {
 import { DeferCancelInput, DeferCancelResult, DeferTriggersSnapshot } from "./defer.ts";
 import { HelperRunsSnapshot, HelperStopInput, HelperStopResult } from "./helpers.ts";
 import {
+  AutopilotSnapshot,
+  AutopilotStartInput,
+  AutopilotStartResult,
+  AutopilotThreadInput,
+  AutopilotThreadResult,
+} from "./autopilot.ts";
+import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
   WorktreeSetupStreamEvent,
@@ -446,6 +453,11 @@ export const WS_METHODS = {
   // T3-Snow helpers
   subscribeHelperRuns: "subscribeHelperRuns",
   helperStop: "helpers.stop",
+  // T3-Snow Autopilot
+  subscribeAutopilot: "subscribeAutopilot",
+  autopilotStart: "autopilot.start",
+  autopilotStop: "autopilot.stop",
+  autopilotResume: "autopilot.resume",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1306,6 +1318,31 @@ const WsHelperStopRpc = Rpc.make(WS_METHODS.helperStop, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsSubscribeAutopilotRpc = Rpc.make(WS_METHODS.subscribeAutopilot, {
+  payload: Schema.Struct({}),
+  success: AutopilotSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsAutopilotStartRpc = Rpc.make(WS_METHODS.autopilotStart, {
+  payload: AutopilotStartInput,
+  success: AutopilotStartResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAutopilotStopRpc = Rpc.make(WS_METHODS.autopilotStop, {
+  payload: AutopilotThreadInput,
+  success: AutopilotThreadResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAutopilotResumeRpc = Rpc.make(WS_METHODS.autopilotResume, {
+  payload: AutopilotThreadInput,
+  success: AutopilotThreadResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1561,6 +1598,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeferCancelRpc,
   WsSubscribeHelperRunsRpc,
   WsHelperStopRpc,
+  WsSubscribeAutopilotRpc,
+  WsAutopilotStartRpc,
+  WsAutopilotStopRpc,
+  WsAutopilotResumeRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

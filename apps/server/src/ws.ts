@@ -158,6 +158,7 @@ import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as DeferService from "./defer/DeferService.ts";
 import * as HelperService from "./helpers/HelperService.ts";
+import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -555,6 +556,7 @@ const makeWsRpcLayer = (
       // Optional so harnesses that assemble the routes without it keep working.
       const deferService = yield* Effect.serviceOption(DeferService.DeferService);
       const helperService = yield* Effect.serviceOption(HelperService.HelperService);
+      const autopilotService = yield* Effect.serviceOption(AutopilotService.AutopilotService);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3605,6 +3607,43 @@ const makeWsRpcLayer = (
               : Effect.succeed(false)
             ).pipe(Effect.map((stopped) => ({ stopped }))),
             { "rpc.aggregate": "helpers" },
+          ),
+        [WS_METHODS.subscribeAutopilot]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeAutopilot,
+            Option.isSome(autopilotService)
+              ? autopilotService.value.streamChanges
+              : Stream.make({ threads: [] }),
+            { "rpc.aggregate": "autopilot" },
+          ),
+        [WS_METHODS.autopilotStart]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.autopilotStart,
+            Option.isSome(autopilotService)
+              ? autopilotService.value.start(input.threadId, input.goal)
+              : Effect.succeed({
+                  started: false,
+                  message: "Autopilot is not available on this T3 Code server.",
+                }),
+            { "rpc.aggregate": "autopilot" },
+          ),
+        [WS_METHODS.autopilotStop]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.autopilotStop,
+            (Option.isSome(autopilotService)
+              ? autopilotService.value.stop(input.threadId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((changed) => ({ changed }))),
+            { "rpc.aggregate": "autopilot" },
+          ),
+        [WS_METHODS.autopilotResume]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.autopilotResume,
+            (Option.isSome(autopilotService)
+              ? autopilotService.value.resume(input.threadId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((changed) => ({ changed }))),
+            { "rpc.aggregate": "autopilot" },
           ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(

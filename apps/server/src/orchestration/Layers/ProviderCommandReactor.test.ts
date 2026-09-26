@@ -62,6 +62,7 @@ import { OrchestrationProjectionPipelineLive } from "./ProjectionPipeline.ts";
 import { OrchestrationProjectionSnapshotQueryLive } from "./ProjectionSnapshotQuery.ts";
 import * as ThreadBackgroundLiveness from "../ThreadBackgroundLiveness.ts";
 import * as ThreadPlanProgress from "../ThreadPlanProgress.ts";
+import * as ThreadTurnPreamble from "../../wake/ThreadTurnPreamble.ts";
 import {
   providerErrorLabelFromInstanceHint,
   ProviderCommandReactorLive,
@@ -121,7 +122,8 @@ describe("ProviderCommandReactor", () => {
     | OrchestrationEngineService
     | ProviderCommandReactor
     | ProjectionSnapshotQuery
-    | SqlClient.SqlClient,
+    | SqlClient.SqlClient
+    | ThreadTurnPreamble.ThreadTurnPreamble,
     unknown
   > | null = null;
   let scope: Scope.Closeable | null = null;
@@ -493,6 +495,7 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
       Layer.provideMerge(Layer.mock(TerminalManager)({ closeIdle: closeIdleTerminals })),
+      Layer.provideMerge(ThreadTurnPreamble.layer),
       Layer.provideMerge(ServerSettingsService.layerTest()),
       Layer.provideMerge(SqlitePersistenceMemory),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
@@ -503,6 +506,9 @@ describe("ProviderCommandReactor", () => {
     const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
     const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
     const reactor = await runtime.runPromise(Effect.service(ProviderCommandReactor));
+    const turnPreamble = await runtime.runPromise(
+      Effect.service(ThreadTurnPreamble.ThreadTurnPreamble),
+    );
     const runEffect = <A, E>(effect: Effect.Effect<A, E>) => runtime!.runPromise(effect);
 
     await Effect.runPromise(
@@ -613,6 +619,7 @@ describe("ProviderCommandReactor", () => {
             `;
           }),
         ),
+      turnPreamble,
       tryHandlePromptCommand,
       startSession,
       sendTurn,
@@ -892,6 +899,45 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
     expect(harness.startSession.mock.calls[0]?.[1]).not.toHaveProperty("title");
+  });
+
+  it("puts registered preambles before the provider text, keeping the stored message", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    await harness.runEffect(
+      Effect.andThen(
+        harness.turnPreamble.setStanding(threadId, "autopilot", "## Autopilot mode"),
+        harness.turnPreamble.addOnce(threadId, "council", "Council report (automated)"),
+      ),
+    );
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-preamble"),
+        threadId,
+        message: {
+          messageId: asMessageId("user-message-preamble"),
+          role: "user",
+          text: "hello reactor",
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: "## Autopilot mode\n\nCouncil report (automated)\n\n---\n\nhello reactor",
+    });
+    const thread = (await harness.readModel()).threads.find((entry) => entry.id === threadId);
+    expect(thread?.messages.at(-1)?.text).toBe("hello reactor");
+    // The one-off text is used up; the standing text stays.
+    expect(await harness.runEffect(harness.turnPreamble.apply(threadId, "next"))).toBe(
+      "## Autopilot mode\n\n---\n\nnext",
+    );
   });
 
   effectIt.effect("forwards only a user-renamed title when starting a provider session", () =>
