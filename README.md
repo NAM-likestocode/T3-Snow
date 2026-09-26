@@ -14,7 +14,7 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
 - **Ship a release:** Actions → **Release** → Run workflow. It builds Windows and
   Linux and publishes a GitHub release. The version is automatic (`1.<run>.0`),
   or push a tag like `v1.2.0`.
-- **Get upstream updates:** Actions → **Sync upstream** runs weekly (or on demand)
+- **Get upstream updates:** Actions → **Sync upstream** → Run workflow
   and opens a pull request merging the latest official T3 Code. It needs a
   repository secret named `SYNC_TOKEN`: a personal access token with the `repo`
   and `workflow` scopes (Settings → Secrets and variables → Actions). If the
