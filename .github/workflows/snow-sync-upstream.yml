@@ -1,6 +1,6 @@
 name: Sync upstream
 
-# Weekly (or on demand): merges the latest official T3 Code into a
+# On demand: merges the latest official T3 Code into a
 # `snow/sync-upstream` branch and opens a pull request. Review it, merge it,
 # then run the Release workflow to ship the update to installed apps.
 #
@@ -8,9 +8,8 @@ name: Sync upstream
 # `repo` and `workflow` scopes. GitHub refuses pushes that touch workflow files
 # from the default Actions token, and upstream commits often do.
 
+# Manual only. To run it weekly, add:  schedule: [{ cron: "17 6 * * 1" }]
 on:
-  schedule:
-    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 concurrency:
