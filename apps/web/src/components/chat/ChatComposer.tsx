@@ -932,6 +932,9 @@ import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectValue } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
+import { useVoiceDictation } from "../../voice/useVoiceDictation";
+import { isVoiceDictationSupported } from "../../voice/whisperEngine";
+import { VoiceDictationButton } from "./VoiceDictationButton";
 import {
   FileIcon,
   BotIcon,
@@ -5721,6 +5724,58 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [expandMobileComposer, insertComposerText, isComposerCollapsedMobile],
   );
 
+  // T3-Snow: local Whisper dictation. Text lands at the caret like typing would.
+  const voiceDictationAvailable = settings.voiceDictationEnabled && isVoiceDictationSupported();
+  const voiceDictation = useVoiceDictation({
+    onTranscript: (text) => {
+      if (insertComposerText(text, "cursor", { ensureLeadingBoundary: true })) return;
+      void navigator.clipboard?.writeText(text).catch(() => undefined);
+      toastManager.add({
+        type: "info",
+        title: "Dictation copied to clipboard",
+        description: "The composer can't take text right now. Paste it when it's ready.",
+      });
+    },
+    onError: (message) => {
+      toastManager.add({ type: "error", title: "Voice dictation", description: message });
+    },
+  });
+  const {
+    toggle: toggleVoiceDictation,
+    start: startVoiceDictation,
+    stop: stopVoiceDictation,
+    cancel: cancelVoiceDictation,
+  } = voiceDictation;
+  const voiceShortcutLabel = shortcutLabelForCommand(keybindings, "composer.voice", {
+    context: { terminalFocus: false, terminalOpen, modelPickerOpen: false },
+  });
+
+  useEffect(() => {
+    if (!voiceDictationAvailable) return;
+    const handler = (event: globalThis.KeyboardEvent) => {
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: getTerminalFocusOwner() !== null,
+          terminalOpen,
+          modelPickerOpen: isComposerModelPickerOpen,
+        },
+      });
+      if (command !== "composer.voice") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat || isCommandPaletteOpen()) return;
+      toggleVoiceDictation();
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [
+    isComposerModelPickerOpen,
+    keybindings,
+    terminalOpen,
+    toggleVoiceDictation,
+    voiceDictationAvailable,
+  ]);
+
   // Context produced by other panels (diff comments, preview picks) asks the store to place
   // its chip; while this composer is mounted for the draft, that means the caret.
   const insertContextReferencesAtCaret = useCallback(
@@ -6801,9 +6856,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ((settings.contextWindowMeterEnabled && activeContextWindow) ||
                     reserveContextWindowMeter
                       ? "pr-28"
-                      : showComposerAttachAction
-                        ? "pr-20"
-                        : "pr-12"),
+                      : voiceDictation.phase !== "idle"
+                        ? "pr-44"
+                        : showComposerAttachAction
+                          ? "pr-20"
+                          : "pr-12"),
                 )}
               >
                 {previewFile ? (
@@ -6975,6 +7032,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  {voiceDictationAvailable &&
+                  (!isComposerResting || voiceDictation.phase !== "idle") ? (
+                    <VoiceDictationButton
+                      phase={voiceDictation.phase}
+                      elapsedMs={voiceDictation.elapsedMs}
+                      modelId={voiceDictation.modelId}
+                      shortcutLabel={voiceShortcutLabel}
+                      onStart={() => void startVoiceDictation()}
+                      onStop={stopVoiceDictation}
+                      onCancel={cancelVoiceDictation}
+                    />
+                  ) : null}
                   {showComposerAttachAction ? (
                     <>
                       <input

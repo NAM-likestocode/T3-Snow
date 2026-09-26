@@ -14,6 +14,7 @@ import {
 import { UsageLimitSourceId } from "./usageLimitSourceId.ts";
 import { EnvironmentMachineKind, ThreadEnvMode, WorktreeSubmodules } from "./environment.ts";
 import { KeybindingShortcut } from "./keybindings.ts";
+import { DEFAULT_VOICE_MODEL_ID, VoiceModelId } from "./voice.ts";
 import {
   CustomModelSetting,
   DEFAULT_TEXT_GENERATION_MODEL,
@@ -493,6 +494,13 @@ export const ClientSettingsSchema = Schema.Struct({
   snapShotFlash: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   snapShotAnimations: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   wordWrap: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // T3-Snow voice dictation. Whisper runs on this device; nothing is sent to a server.
+  voiceDictationEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  voiceModel: VoiceModelId.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_VOICE_MODEL_ID))),
+  // ISO-639-1 code for multilingual models. Empty detects the language.
+  voiceLanguage: TrimmedString.check(Schema.isMaxLength(16)).pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+  ),
 });
 export type ClientSettings = typeof ClientSettingsSchema.Type;
 
@@ -1631,6 +1639,9 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
+  voiceDictationEnabled: Schema.optionalKey(Schema.Boolean),
+  voiceModel: Schema.optionalKey(VoiceModelId),
+  voiceLanguage: Schema.optionalKey(TrimmedString.check(Schema.isMaxLength(16))),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
   composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
   sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),

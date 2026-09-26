@@ -473,6 +473,38 @@
         "licenseId": "MIT",
         "copyrights": ["Copyright (c) 2025 opencode"]
       }
+    },
+    {
+      "name": "onnxruntime-web",
+      "sourceUrl": "https://github.com/microsoft/onnxruntime",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Microsoft Corporation"]
+      }
+    },
+    {
+      "name": "onnxruntime-common",
+      "sourceUrl": "https://github.com/microsoft/onnxruntime",
+      "generatedNotice": {
+        "licenseId": "MIT",
+        "copyrights": ["Copyright (c) Microsoft Corporation"]
+      }
+    },
+    {
+      "name": "guid-typescript",
+      "sourceUrl": "https://github.com/NicolasDeveloper/guid-typescript",
+      "generatedNotice": {
+        "licenseId": "ISC",
+        "copyrights": ["Copyright (c) Nicolas Gomes"]
+      }
+    },
+    {
+      "name": "@img/sharp-libvips-linux-x64",
+      "sourceUrl": "https://github.com/lovell/sharp-libvips",
+      "generatedNotice": {
+        "licenseId": "LGPL-3.0-or-later",
+        "copyrights": ["Copyright (c) libvips contributors"]
+      }
     }
   ]
 }
