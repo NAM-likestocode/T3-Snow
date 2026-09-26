@@ -156,6 +156,7 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+import * as DeferService from "./defer/DeferService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -550,6 +551,8 @@ const makeWsRpcLayer = (
       const keybindings = yield* Keybindings.Keybindings;
       const environmentTheme = yield* EnvironmentTheme.EnvironmentThemeService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
+      // Optional so harnesses that assemble the routes without it keep working.
+      const deferService = yield* Effect.serviceOption(DeferService.DeferService);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3567,6 +3570,23 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.deviceAction, deviceService.action(input), {
             "rpc.aggregate": "device",
           }),
+        [WS_METHODS.subscribeDeferTriggers]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeDeferTriggers,
+            Option.isSome(deferService)
+              ? deferService.value.streamChanges
+              : Stream.make({ triggers: [] }),
+            { "rpc.aggregate": "defer" },
+          ),
+        [WS_METHODS.deferCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.deferCancel,
+            (Option.isSome(deferService)
+              ? deferService.value.cancelById(input.triggerId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((cancelled) => ({ cancelled }))),
+            { "rpc.aggregate": "defer" },
+          ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(
             WS_METHODS.subscribeDeviceState,

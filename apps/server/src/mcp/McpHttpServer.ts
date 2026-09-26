@@ -32,6 +32,8 @@ import {
 } from "./toolkits/preview/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
+import { DeferToolkitHandlersLive } from "./toolkits/defer/handlers.ts";
+import { DeferToolkit } from "./toolkits/defer/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -667,8 +669,14 @@ const McpTransportLive = McpServer.layerHttp({
   protocols: [McpProtocol.v2025_06_18],
 }).pipe(Layer.provide(McpAuthMiddlewareLive));
 
+/** T3-Snow: deferred wake-ups (`defer`). */
+export const DeferToolkitRegistrationLive = McpServer.toolkit(DeferToolkit).pipe(
+  Layer.provide(DeferToolkitHandlersLive),
+);
+
 export const layer = Layer.mergeAll(
   PreviewToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
+  DeferToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));
