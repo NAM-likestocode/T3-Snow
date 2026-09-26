@@ -159,6 +159,7 @@ import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as DeferService from "./defer/DeferService.ts";
 import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
+import * as CouncilService from "./council/CouncilService.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -557,6 +558,7 @@ const makeWsRpcLayer = (
       const deferService = yield* Effect.serviceOption(DeferService.DeferService);
       const helperService = yield* Effect.serviceOption(HelperService.HelperService);
       const autopilotService = yield* Effect.serviceOption(AutopilotService.AutopilotService);
+      const councilService = yield* Effect.serviceOption(CouncilService.CouncilService);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3644,6 +3646,45 @@ const makeWsRpcLayer = (
               : Effect.succeed(false)
             ).pipe(Effect.map((changed) => ({ changed }))),
             { "rpc.aggregate": "autopilot" },
+          ),
+        [WS_METHODS.subscribeCouncil]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeCouncil,
+            Option.isSome(councilService)
+              ? councilService.value.streamChanges
+              : Stream.make({ councils: [] }),
+            { "rpc.aggregate": "council" },
+          ),
+        [WS_METHODS.councilPrepare]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.councilPrepare,
+            Option.isSome(councilService)
+              ? councilService.value.prepare(input.threadId, input.args)
+              : Effect.succeed({
+                  kind: "info" as const,
+                  text: "Council is not available on this T3 Code server.",
+                }),
+            { "rpc.aggregate": "council" },
+          ),
+        [WS_METHODS.councilStart]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.councilStart,
+            Option.isSome(councilService)
+              ? councilService.value.start(input.threadId, input.args)
+              : Effect.succeed({
+                  started: false,
+                  message: "Council is not available on this T3 Code server.",
+                }),
+            { "rpc.aggregate": "council" },
+          ),
+        [WS_METHODS.councilCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.councilCancel,
+            (Option.isSome(councilService)
+              ? councilService.value.cancel(input.threadId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((cancelled) => ({ cancelled }))),
+            { "rpc.aggregate": "council" },
           ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(

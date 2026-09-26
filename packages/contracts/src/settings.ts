@@ -1080,6 +1080,25 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
   "sidebarAutoSettleAfterDays",
 ]);
 
+/** T3-Snow Council defaults. */
+const nullModel = Schema.NullOr(ModelSelection).pipe(
+  Schema.withDecodingDefault(Effect.succeed(null)),
+);
+export const CouncilSettings = Schema.Struct({
+  rounds: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 })).pipe(
+    Schema.withDecodingDefault(Effect.succeed(2)),
+  ),
+  web: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  models: Schema.Struct({
+    optimist: nullModel,
+    skeptic: nullModel,
+    cfo: nullModel,
+    operator: nullModel,
+    chair: nullModel,
+  }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type CouncilSettings = typeof CouncilSettings.Type;
+
 export const StorageCleanupSettings = Schema.Struct({
   worktreeAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -1253,6 +1272,8 @@ export const ServerSettings = Schema.Struct({
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
+  /** T3-Snow: Council defaults; a null model means the thread's own model. */
+  council: CouncilSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   /** T3-Snow: the model helpers run on when the agent names none. */
   helperModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
@@ -1549,6 +1570,21 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   helperModelSelection: Schema.optionalKey(ModelSelection),
+  council: Schema.optionalKey(
+    Schema.Struct({
+      rounds: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 }))),
+      web: Schema.optionalKey(Schema.Boolean),
+      models: Schema.optionalKey(
+        Schema.Struct({
+          optimist: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+          skeptic: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+          cfo: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+          operator: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+          chair: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+        }),
+      ),
+    }),
+  ),
   pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   observability: Schema.optionalKey(
     Schema.Struct({

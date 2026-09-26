@@ -49,6 +49,11 @@ import {
   scopeClaudeModelCatalog,
 } from "../provider/ClaudeModelCatalog.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
+import { resolveClaudeSdkExecutablePath } from "../provider/Drivers/ClaudeExecutable.ts";
+import {
+  query as claudeQuery,
+  type Options as ClaudeQueryOptions,
+} from "@anthropic-ai/claude-agent-sdk";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
 
@@ -410,10 +415,115 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       };
     });
 
+  /**
+   * T3-Snow: one Agent SDK run with a custom system prompt, no settings,
+   * hooks, MCP servers or files, and only WebSearch/WebFetch when `web`.
+   */
+  const runIsolatedPrompt: NonNullable<
+    TextGeneration.TextGeneration["Service"]["runIsolatedPrompt"]
+  > = Effect.fn("ClaudeTextGeneration.runIsolatedPrompt")(function* (input) {
+    const operation = "runIsolatedPrompt";
+    const catalog = yield* scopedModelCatalog;
+    const model = resolveClaudeModelSlug(catalog, input.modelSelection.model);
+    const selection = { ...input.modelSelection, model };
+    const effort = normalizeClaudeCatalogEffort(
+      catalog,
+      resolveClaudeCatalogEffort(
+        catalog,
+        model,
+        getModelSelectionStringOptionValue(selection, "effort"),
+      ),
+      model,
+    );
+    const executablePath = yield* resolveClaudeSdkExecutablePath(
+      claudeSettings.binaryPath || "claude",
+      claudeEnvironment,
+    );
+    // An empty folder, so no CLAUDE.md or project settings can reach the run.
+    const workingDirectory = yield* fileSystem
+      .makeTempDirectoryScoped({ prefix: "t3code-isolated-" })
+      .pipe(
+        Effect.mapError((cause) =>
+          normalizeCliError("claude", operation, cause, "Failed to create a working folder"),
+        ),
+      );
+    const tools = input.web ? ["WebSearch", "WebFetch"] : [];
+
+    const run = Effect.tryPromise({
+      try: async (signal) => {
+        const abortController = new AbortController();
+        signal.addEventListener("abort", () => abortController.abort(), { once: true });
+        const conversation = claudeQuery({
+          prompt: input.prompt,
+          options: {
+            pathToClaudeCodeExecutable: executablePath,
+            abortController,
+            cwd: workingDirectory,
+            model: resolveClaudeCatalogApiModelId(catalog, selection),
+            ...(effort
+              ? { effort: effort as unknown as NonNullable<ClaudeQueryOptions["effort"]> }
+              : {}),
+            systemPrompt: input.systemPrompt,
+            tools,
+            allowedTools: tools,
+            settingSources: [],
+            settings: { disableAllHooks: true },
+            mcpServers: {},
+            strictMcpConfig: true,
+            persistSession: false,
+            permissionMode: "dontAsk",
+            env: {
+              ...claudeEnvironment,
+              ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+              CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
+              CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+            },
+            stderr: () => {},
+          },
+        });
+        let searches = 0;
+        for await (const message of conversation) {
+          if (message.type === "assistant") {
+            for (const block of message.message.content) {
+              if (block.type === "tool_use" && block.name === "WebSearch") {
+                searches += 1;
+                const query = (block.input as { readonly query?: unknown }).query;
+                input.onSearch?.(typeof query === "string" ? query : "");
+              }
+            }
+          } else if (message.type === "result") {
+            if (message.subtype !== "success") {
+              throw new Error(`Claude stopped: ${message.subtype}`);
+            }
+            return { text: message.result, searches };
+          }
+        }
+        throw new Error("Claude ended without a result.");
+      },
+      catch: (cause) =>
+        new TextGenerationError({
+          operation,
+          detail: cause instanceof Error ? cause.message : "Claude run failed.",
+          cause,
+        }),
+    });
+
+    return yield* run.pipe(
+      Effect.timeoutOption(input.timeoutMs),
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.fail(new TextGenerationError({ operation, detail: "Timed out." })),
+          onSome: Effect.succeed,
+        }),
+      ),
+    );
+  }, Effect.scoped);
+
   return {
     generateCommitMessage,
     generatePrContent,
     generateBranchName,
     generateThreadTitle,
+    runIsolatedPrompt,
   } satisfies TextGeneration.TextGeneration["Service"];
 });

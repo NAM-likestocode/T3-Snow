@@ -220,6 +220,7 @@ export const make = Effect.gen(function* () {
       deferTriggers: true,
       helperRuns: true,
       autopilot: true,
+      council: true,
       questionAttachments: true,
       fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
       pullRequests: true,
