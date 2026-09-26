@@ -6076,9 +6076,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   // T3-Snow: local Whisper dictation. Text lands at the caret like typing would.
   const voiceDictationAvailable = settings.voiceDictationEnabled && isVoiceDictationSupported();
+  // Bumped when Enter asked to send a dictation; the effect below sends on the
+  // render that already contains the transcript, so send gating sees it.
+  const [voiceSendRequest, setVoiceSendRequest] = useState(0);
   const voiceDictation = useVoiceDictation({
-    onTranscript: (text) => {
-      if (insertComposerText(text, "cursor", { ensureLeadingBoundary: true })) return;
+    onTranscript: (text, { send }) => {
+      if (insertComposerText(text, "cursor", { ensureLeadingBoundary: true })) {
+        if (send) setVoiceSendRequest((request) => request + 1);
+        return;
+      }
       void navigator.clipboard?.writeText(text).catch(() => undefined);
       toastManager.add({
         type: "info",
@@ -6094,8 +6100,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggle: toggleVoiceDictation,
     start: startVoiceDictation,
     stop: stopVoiceDictation,
+    stopAndSend: stopAndSendVoiceDictation,
     cancel: cancelVoiceDictation,
   } = voiceDictation;
+  const lastVoiceSendRequestRef = useRef(0);
+  useEffect(() => {
+    if (voiceSendRequest === lastVoiceSendRequestRef.current) return;
+    lastVoiceSendRequestRef.current = voiceSendRequest;
+    submitComposer(undefined, "foreground");
+  }, [submitComposer, voiceSendRequest]);
   const voiceShortcutLabel = shortcutLabelForCommand(keybindings, "composer.voice", {
     context: { terminalFocus: false, terminalOpen, modelPickerOpen: false },
   });
@@ -7493,7 +7506,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       modelId={voiceDictation.modelId}
                       shortcutLabel={voiceShortcutLabel}
                       onStart={() => void startVoiceDictation()}
+                      sendQueued={voiceDictation.sendQueued}
                       onStop={stopVoiceDictation}
+                      onStopAndSend={stopAndSendVoiceDictation}
                       onCancel={cancelVoiceDictation}
                     />
                   ) : null}

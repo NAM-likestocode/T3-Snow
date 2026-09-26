@@ -1,7 +1,6 @@
 import { MicIcon, SquareIcon, XIcon } from "lucide-react";
 import { useEffect } from "react";
 
-import { cn } from "~/lib/utils";
 import { formatRecordingDuration } from "~/voice/audio";
 import type { VoiceDictationPhase } from "~/voice/useVoiceDictation";
 import { WHISPER_MODELS } from "~/voice/whisperModels";
@@ -15,7 +14,8 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 /**
  * The composer's dictation control (T3-Snow). A mic while idle; a timer pill
  * with stop and cancel while recording; a quiet progress label while local
- * Whisper downloads or transcribes.
+ * Whisper downloads or transcribes. While recording or transcribing, Enter
+ * sends the message as soon as the transcript lands; Escape discards.
  */
 export function VoiceDictationButton(props: {
   readonly phase: VoiceDictationPhase;
@@ -23,26 +23,38 @@ export function VoiceDictationButton(props: {
   readonly modelId: VoiceModelId;
   readonly shortcutLabel: string | null;
   readonly disabled?: boolean;
+  /** Enter was pressed; the message goes out once the transcript lands. */
+  readonly sendQueued: boolean;
   readonly onStart: () => void;
   readonly onStop: () => void;
+  readonly onStopAndSend: () => void;
   readonly onCancel: () => void;
 }) {
-  const { phase, onCancel } = props;
+  const { phase, onCancel, onStopAndSend } = props;
   const model = WHISPER_MODELS[props.modelId];
   const status = useWhisperStore((state) => state.statusByRepo[model.repo]);
 
-  // Escape discards the take instead of reaching the composer's own handler.
+  // Claim Enter and Escape before the composer's own handlers see them: Enter
+  // sends once the transcript lands, Escape discards the take.
   useEffect(() => {
-    if (phase !== "recording") return;
+    if (phase !== "recording" && phase !== "transcribing") return;
     const handler = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCancel();
+      if (event.isComposing) return;
+      if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        onStopAndSend();
+        return;
+      }
+      if (event.key === "Escape" && phase === "recording") {
+        event.preventDefault();
+        event.stopPropagation();
+        onCancel();
+      }
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [onCancel, phase]);
+  }, [onCancel, onStopAndSend, phase]);
 
   if (phase === "recording") {
     return (
@@ -51,10 +63,7 @@ export function VoiceDictationButton(props: {
         role="group"
         aria-label="Recording voice"
       >
-        <span className="relative me-1.5 flex size-2">
-          <span className="absolute inset-0 rounded-full bg-destructive/60 motion-safe:animate-ping" />
-          <span className="relative size-2 rounded-full bg-destructive" />
-        </span>
+        <span className="me-1.5 size-2 rounded-full bg-destructive" aria-hidden />
         <span className="min-w-8 text-xs font-medium tabular-nums">
           {formatRecordingDuration(props.elapsedMs)}
         </span>
@@ -63,9 +72,8 @@ export function VoiceDictationButton(props: {
             render={
               <Button
                 type="button"
-                variant="ghost"
+                variant="ghost-destructive"
                 size="icon-xs"
-                className="rounded-full text-destructive hover:bg-destructive/15 hover:text-destructive"
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={props.onStop}
                 aria-label="Stop and transcribe"
@@ -77,6 +85,7 @@ export function VoiceDictationButton(props: {
           <TooltipPopup>
             Stop and transcribe
             {props.shortcutLabel ? <ShortcutHint label={props.shortcutLabel} /> : null}
+            <span className="block text-muted-foreground">Enter to transcribe and send</span>
           </TooltipPopup>
         </Tooltip>
         <Tooltip>
@@ -84,9 +93,8 @@ export function VoiceDictationButton(props: {
             render={
               <Button
                 type="button"
-                variant="ghost"
+                variant="ghost-destructive"
                 size="icon-xs"
-                className="rounded-full text-destructive/70 hover:bg-destructive/15 hover:text-destructive"
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={props.onCancel}
                 aria-label="Discard recording"
@@ -116,7 +124,11 @@ export function VoiceDictationButton(props: {
       >
         <Spinner size="sm" />
         <span className="tabular-nums">
-          {downloading ? `Downloading Whisper${progress}` : "Transcribing…"}
+          {downloading
+            ? `Downloading Whisper${progress}`
+            : props.sendQueued
+              ? "Transcribing, then sending…"
+              : "Transcribing…"}
         </span>
       </div>
     );
@@ -132,13 +144,12 @@ export function VoiceDictationButton(props: {
         render={
           <Button
             type="button"
-            variant="ghost"
+            variant={phase === "starting" ? "ghost-destructive" : "ghost"}
             size="icon-sm"
             disabled={props.disabled || phase === "starting"}
             onPointerDown={(event) => event.preventDefault()}
             onClick={props.onStart}
             aria-label="Dictate with voice"
-            className={cn(phase === "starting" && "text-destructive")}
           />
         }
       >
