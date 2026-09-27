@@ -21,7 +21,6 @@ import * as Stream from "effect/Stream";
 
 import * as ServerConfig from "../config.ts";
 import * as DeferService from "../defer/DeferService.ts";
-import * as HelperService from "../helpers/HelperService.ts";
 import { OrchestrationEngineService } from "../orchestration/Services/OrchestrationEngine.ts";
 import { ProjectionSnapshotQuery } from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadTurnPreamble from "../wake/ThreadTurnPreamble.ts";
@@ -112,7 +111,6 @@ const makeHarness = Effect.fn("makeAutopilotHarness")(function* (
   const shell = yield* Ref.make(makeShell(options.shell));
   const commands = yield* Ref.make<ReadonlyArray<OrchestrationCommand>>([]);
   const events = yield* PubSub.unbounded<OrchestrationEvent>();
-  const helpersRunning = yield* Ref.make(false);
   const deferArmed = yield* Ref.make(false);
 
   const dependencies = Layer.mergeAll(
@@ -124,7 +122,6 @@ const makeHarness = Effect.fn("makeAutopilotHarness")(function* (
         Ref.update(commands, (recorded) => [...recorded, command]).pipe(Effect.as({ sequence: 1 })),
       subscribeDomainEvents: Effect.succeed(Stream.fromPubSub(events)),
     }),
-    Layer.mock(HelperService.HelperService)({ hasRunning: () => Ref.get(helpersRunning) }),
     Layer.mock(DeferService.DeferService)({ hasArmed: () => Ref.get(deferArmed) }),
     ThreadTurnPreamble.layer,
     Layer.succeed(ServerConfig.ServerConfig, { stateDir } as ServerConfig.ServerConfig["Service"]),
@@ -181,7 +178,6 @@ const makeHarness = Effect.fn("makeAutopilotHarness")(function* (
     activities,
     publish,
     turnEnded,
-    helpersRunning,
     deferArmed,
     files,
   };
@@ -235,16 +231,11 @@ describe("AutopilotService", () => {
       }).pipe(Effect.scoped),
     );
 
-    it.effect("turns itself off only once helpers and wake-ups are done too", () =>
+    it.effect("turns itself off only once wake-ups are done too", () =>
       Effect.gen(function* () {
         const harness = yield* makeHarness();
         yield* harness.autopilot.start(THREAD, "Add dark mode");
-        yield* Ref.set(harness.helpersRunning, true);
         yield* Ref.set(harness.deferArmed, true);
-        yield* harness.turnEnded;
-        expect((yield* Ref.get(harness.latest)).threads).toHaveLength(1);
-
-        yield* Ref.set(harness.helpersRunning, false);
         yield* harness.turnEnded;
         expect((yield* Ref.get(harness.latest)).threads).toHaveLength(1);
 

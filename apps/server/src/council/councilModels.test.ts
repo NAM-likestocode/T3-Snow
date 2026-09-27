@@ -1,7 +1,7 @@
 import { ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { resolveHelperModel } from "./helperModels.ts";
+import { resolveCouncilModel } from "./councilModels.ts";
 
 function provider(instanceId: string, models: ReadonlyArray<[string, string]>) {
   return {
@@ -40,16 +40,28 @@ const defaultSelection = {
   options: [{ id: "effort", value: "medium" }],
 };
 
-describe("resolveHelperModel", () => {
-  it("uses the helper model setting when no model is named", () => {
+describe("resolveCouncilModel", () => {
+  it("uses the default model when no model is named", () => {
     expect(
-      resolveHelperModel({ providers, defaultSelection, requested: undefined, effort: undefined }),
+      resolveCouncilModel({
+        providers,
+        defaultSelection,
+        requested: undefined,
+        effort: undefined,
+        defaultName: "default",
+      }),
     ).toEqual({ ok: true, selection: defaultSelection, label: "claude-opus-5-5:medium" });
   });
 
   it("matches loose names, preferring the configured model", () => {
     const resolve = (requested: string, effort?: string) =>
-      resolveHelperModel({ providers, defaultSelection, requested, effort });
+      resolveCouncilModel({
+        providers,
+        defaultSelection,
+        requested,
+        effort,
+        defaultName: "default",
+      });
     expect(resolve("opus")).toMatchObject({ label: "claude-opus-5-5:medium" });
     expect(resolve("Opus 4.8")).toMatchObject({ label: "claude-opus-4-8" });
     expect(resolve("codex/gpt-6-astra", "low")).toMatchObject({

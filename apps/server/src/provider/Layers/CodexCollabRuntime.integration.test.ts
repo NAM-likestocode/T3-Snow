@@ -931,13 +931,12 @@ describe("CodexSessionRuntime compaction", () => {
         assert.equal(item.role, "developer");
         return item.content[0].text;
       });
-      assert.lengthOf(texts, 3);
+      assert.lengthOf(texts, 2);
       assert.match(
         texts[0] ?? "",
         /^<t3_code_runtime><runtime_info>.*as GPT-5\.6 Sol \(model slug: gpt-5\.6-sol\).*<\/t3_code_runtime>$/s,
       );
       assert.match(texts[1] ?? "", /^<t3_code_wakeups><deferred_wakeups>/);
-      assert.match(texts[2] ?? "", /^<t3_code_helpers><helpers>/);
 
       yield* runtime.close;
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

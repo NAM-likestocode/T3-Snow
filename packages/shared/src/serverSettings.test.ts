@@ -41,15 +41,13 @@ describe("serverSettings helpers", () => {
       logsAfterDays: 30,
     });
   });
-  it("replaces helper and council model choices whole, keeping other council fields", () => {
+  it("replaces council model choices whole, keeping other council fields", () => {
     const codex = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-astra" };
-    expect(
-      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { helperModelSelection: codex })
-        .helperModelSelection,
-    ).toEqual(codex);
-
     const withRounds = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      council: { rounds: 3, models: { skeptic: DEFAULT_SERVER_SETTINGS.helperModelSelection } },
+      council: {
+        rounds: 3,
+        models: { skeptic: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection },
+      },
     });
     const council = applyServerSettingsPatch(withRounds, {
       council: { models: { skeptic: codex, cfo: codex } },

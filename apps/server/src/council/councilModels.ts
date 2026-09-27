@@ -1,13 +1,14 @@
 /**
- * Picks the provider instance, model, and effort a helper runs on (T3-Snow).
+ * Picks the provider instance, model, and effort a council seat runs on (T3-Snow).
  *
- * With no model named, helpers use the "Helper model" setting. A named model
+ * With no model named, a seat uses its default (a Council setting or the
+ * thread's model). A named model
  * may be any model of a usable provider (enabled, installed, available, and
  * not signed out), matched loosely: `opus`, `claude-opus-5-5`, `Opus 5.5`,
  * or `claudeAgent/claude-opus-5-5`. Nothing falls back silently: an unusable
  * choice is refused with the names that would work.
  *
- * @module helpers/helperModels
+ * @module council/councilModels
  */
 import {
   isProviderAvailable,
@@ -19,17 +20,17 @@ import {
 
 const EFFORT_OPTION_IDS = ["effort", "reasoningEffort"] as const;
 
-export interface ResolvedHelperModel {
+export interface ResolvedCouncilModel {
   readonly selection: ModelSelection;
   /** Short name for messages, e.g. `claude-opus-5-5:medium`. */
   readonly label: string;
 }
 
-export type HelperModelResolution =
-  | ({ readonly ok: true } & ResolvedHelperModel)
+export type CouncilModelResolution =
+  | ({ readonly ok: true } & ResolvedCouncilModel)
   | { readonly ok: false; readonly error: string };
 
-export function isHelperProviderUsable(provider: ServerProvider): boolean {
+export function isCouncilProviderUsable(provider: ServerProvider): boolean {
   return (
     provider.enabled &&
     provider.installed &&
@@ -95,30 +96,30 @@ function labelFor(selection: ModelSelection): string {
 }
 
 /** Names an agent can pass as `model`, for error messages and the profile list. */
-export function listHelperModelNames(providers: ReadonlyArray<ServerProvider>): string {
+export function listCouncilModelNames(providers: ReadonlyArray<ServerProvider>): string {
   const names = providers
-    .filter(isHelperProviderUsable)
+    .filter(isCouncilProviderUsable)
     .flatMap((provider) =>
       provider.models.filter((model) => !model.isLegacy).map((model) => model.slug),
     );
   return names.length > 0 ? names.join(", ") : "none (no provider is ready)";
 }
 
-export function resolveHelperModel(input: {
+export function resolveCouncilModel(input: {
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly defaultSelection: ModelSelection;
   readonly requested: string | undefined;
   readonly effort: string | undefined;
-  /** How errors name the default, e.g. "helper model" or "thread's model". */
-  readonly defaultName?: string;
-}): HelperModelResolution {
-  const usable = input.providers.filter(isHelperProviderUsable);
+  /** How errors name the default, e.g. "thread's model". */
+  readonly defaultName: string;
+}): CouncilModelResolution {
+  const usable = input.providers.filter(isCouncilProviderUsable);
   const requested = input.requested?.trim();
 
   const finish = (
     selection: ModelSelection,
     model: ServerProviderModel | undefined,
-  ): HelperModelResolution => {
+  ): CouncilModelResolution => {
     const withChosenEffort = withEffort(selection, model, input.effort);
     if (typeof withChosenEffort === "string") return { ok: false, error: withChosenEffort };
     return { ok: true, selection: withChosenEffort, label: labelFor(withChosenEffort) };
@@ -128,10 +129,10 @@ export function resolveHelperModel(input: {
     const provider = input.providers.find(
       (entry) => entry.instanceId === input.defaultSelection.instanceId,
     );
-    if (!provider || !isHelperProviderUsable(provider)) {
+    if (!provider || !isCouncilProviderUsable(provider)) {
       return {
         ok: false,
-        error: `The ${input.defaultName ?? "helper model"} ${input.defaultSelection.model} is not usable because its provider (${input.defaultSelection.instanceId}) is not enabled, installed, and signed in. Name another model; usable: ${listHelperModelNames(input.providers)}.`,
+        error: `The ${input.defaultName} ${input.defaultSelection.model} is not usable because its provider (${input.defaultSelection.instanceId}) is not enabled, installed, and signed in. Name another model; usable: ${listCouncilModelNames(input.providers)}.`,
       };
     }
     const model = provider.models.find((entry) => entry.slug === input.defaultSelection.model);
@@ -143,7 +144,7 @@ export function resolveHelperModel(input: {
   const scoped = slash > 0 ? usable.filter((p) => p.instanceId === requested.slice(0, slash)) : [];
   const query = squash(slash > 0 && scoped.length > 0 ? requested.slice(slash + 1) : requested);
   const pool = scoped.length > 0 ? scoped : usable;
-  // The default helper provider wins ties, so `opus` means the configured Opus.
+  // The default's provider wins ties, so `opus` means the configured Opus.
   const ordered = [
     ...pool.filter((p) => p.instanceId === input.defaultSelection.instanceId),
     ...pool.filter((p) => p.instanceId !== input.defaultSelection.instanceId),
@@ -166,7 +167,7 @@ export function resolveHelperModel(input: {
   if (!found) {
     return {
       ok: false,
-      error: `No usable model matches "${requested}". Usable: ${listHelperModelNames(input.providers)}.`,
+      error: `No usable model matches "${requested}". Usable: ${listCouncilModelNames(input.providers)}.`,
     };
   }
   const base: ModelSelection =

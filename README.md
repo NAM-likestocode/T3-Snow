@@ -11,9 +11,6 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
   Prefer the cloud? Pick **Deepgram** there and paste your own API key.
 - **Wake-ups:** agents can schedule check-ins ("wake me when the build is done")
   with the built-in `defer` tool; armed ones show above the composer.
-- **Helpers:** agents hand parts of a task to helpers on any model (Claude Opus 5.5
-  by default), which report back when done. Running ones show above the composer;
-  pick the default in **Settings → General → Helper model**.
 - **Autopilot:** send `/autopilot <goal>` and the agent works on it alone until it
   is done and verified, answering its own questions, then turns itself off.
 - **Council:** send `/council <idea>` and four advisors (on any mix of Claude and GPT

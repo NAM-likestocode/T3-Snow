@@ -465,12 +465,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["generated thread titles source control content default provider"],
   },
   {
-    id: "helper-model",
-    title: "Helper model",
-    to: "/settings/general",
-    searchTerms: ["helpers subagent delegate agents background model effort opus"],
-  },
-  {
     id: "council-rounds",
     title: "Council rounds",
     to: "/settings/general",

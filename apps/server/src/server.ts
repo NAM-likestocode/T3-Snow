@@ -163,7 +163,6 @@ import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as DeferService from "./defer/DeferService.ts";
 import * as ThreadWakeQueue from "./wake/ThreadWakeQueue.ts";
-import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as CouncilService from "./council/CouncilService.ts";
 import * as SubagentControl from "./agents/SubagentControl.ts";
@@ -284,7 +283,6 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(CouncilService.layer),
   Layer.provideMerge(AutopilotService.layer),
   Layer.provideMerge(DeferService.layer),
-  Layer.provideMerge(HelperService.layer),
   Layer.provideMerge(ThreadWakeQueue.layer),
   Layer.provideMerge(ThreadTurnPreamble.layer),
   Layer.provideMerge(AgentAwarenessRelay.layer.pipe(Layer.provide(ServerSecretStore.layer))),

@@ -394,10 +394,7 @@ export function applyServerSettingsPatch(
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
       : {}),
-    // T3-Snow: model selections replace whole, like the ones above.
-    ...(patch.helperModelSelection !== undefined
-      ? { helperModelSelection: patch.helperModelSelection }
-      : {}),
+    // T3-Snow: council seat models replace whole, like the selections above.
     ...(patch.council?.models !== undefined
       ? {
           council: {
