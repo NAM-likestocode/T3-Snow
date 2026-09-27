@@ -18,6 +18,7 @@ import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as ServerConfig from "../config.ts";
 import * as DeferService from "../defer/DeferService.ts";
@@ -296,6 +297,48 @@ describe("AutopilotService", () => {
         expect(yield* harness.autopilot.stop(THREAD)).toBe(true);
         expect(yield* harness.ofType("thread.turn.interrupt")).toHaveLength(1);
         expect(yield* harness.autopilot.stop(THREAD)).toBe(false);
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("pauses once the turn budget is used up", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        yield* harness.autopilot.start(THREAD, "Add dark mode");
+        yield* Ref.set(harness.deferArmed, true);
+        const turnSeen = (index: number) =>
+          Ref.update(harness.shell, (shell) => ({
+            ...shell,
+            latestTurn: { ...completedTurn, turnId: TurnId.make(`turn-${index}`) },
+          })).pipe(
+            Effect.andThen(
+              harness.publish({ type: "thread.session-set", payload: { threadId: THREAD } }),
+            ),
+          );
+        for (let index = 1; index <= AutopilotService.AUTOPILOT_MAX_TURNS; index += 1) {
+          yield* turnSeen(index);
+        }
+        expect((yield* Ref.get(harness.latest)).threads).toMatchObject([{ status: "active" }]);
+
+        yield* turnSeen(AutopilotService.AUTOPILOT_MAX_TURNS + 1);
+        expect((yield* Ref.get(harness.latest)).threads).toMatchObject([{ status: "paused" }]);
+        expect((yield* harness.activities).at(-1)).toMatch(/^Autopilot paused: budget reached/);
+        expect(yield* harness.preamble.apply(THREAD, "x")).toBe("x");
+
+        // Resuming starts a fresh budget.
+        expect(yield* harness.autopilot.resume(THREAD)).toBe(true);
+        yield* turnSeen(AutopilotService.AUTOPILOT_MAX_TURNS + 2);
+        expect((yield* Ref.get(harness.latest)).threads).toMatchObject([{ status: "active" }]);
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("pauses once the time budget is used up", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        yield* harness.autopilot.start(THREAD, "Add dark mode");
+        yield* Ref.set(harness.deferArmed, true);
+        yield* TestClock.adjust(AutopilotService.AUTOPILOT_MAX_DURATION_MS);
+        yield* harness.turnEnded;
+        expect((yield* Ref.get(harness.latest)).threads).toMatchObject([{ status: "paused" }]);
       }).pipe(Effect.scoped),
     );
 

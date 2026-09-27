@@ -340,16 +340,74 @@ describe("DeferService", () => {
       }).pipe(Effect.scoped),
     );
 
-    it.effect("only runs commands for threads in full access or auto mode", () =>
+    it.effect("only runs commands for threads in full access mode", () =>
       Effect.gen(function* () {
-        const harness = yield* makeHarness({ runtimeMode: "approval-required" });
+        for (const runtimeMode of ["approval-required", "auto"] as const) {
+          const harness = yield* makeHarness({ runtimeMode });
+          const error = yield* harness.defer
+            .create({ threadId: THREAD_ID, note: "x", check: "true" })
+            .pipe(Effect.flip);
+          expect(error.message).toContain("need this thread in Full access mode");
+          expect(
+            yield* harness.defer.create({ threadId: THREAD_ID, note: "x", at: "in 1m" }),
+          ).toMatch(/^Armed /);
+        }
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("stops a check and skips a run once the thread leaves full access", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness({ exitCodes: [1] });
+        const checkId = armedId(
+          yield* harness.defer.create({ threadId: THREAD_ID, note: "tests", check: "make test" }),
+        );
+        const runId = armedId(
+          yield* harness.defer.create({
+            threadId: THREAD_ID,
+            note: "report",
+            at: "in 1m",
+            run: "cat log",
+          }),
+        );
+        yield* harness.advance("1 seconds");
+        expect(yield* Ref.get(harness.runs)).toEqual(["make test"]);
+
+        yield* Ref.update(harness.thread, (thread) => ({
+          ...thread,
+          runtimeMode: "auto" as const,
+        }));
+        yield* harness.advance("1 minutes");
+        expect(yield* Ref.get(harness.runs)).toEqual(["make test"]);
+        expect(yield* harness.turnStarts).toEqual([
+          `${checkId} fired: stopped checking \`make test\`: the thread is no longer in Full access mode\ntests`,
+        ]);
+        // The run wake-up still fires, after the first one's turn, without running its command.
+        yield* PubSub.publish(harness.events, sessionSet("running"));
+        yield* PubSub.publish(harness.events, sessionSet("ready"));
+        yield* settle;
+        expect((yield* harness.turnStarts)[1]).toBe(
+          `${runId} fired: scheduled time reached\nreport\n\n$ cat log (exit 126)\nNot run: this thread is no longer in Full access mode.`,
+        );
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("never fires sooner than 30s, and caps wake-ups per hour", () =>
+      Effect.gen(function* () {
+        const harness = yield* makeHarness();
+        yield* harness.defer.create({ threadId: THREAD_ID, note: "now", at: "in 0s" });
+        yield* harness.advance("29 seconds");
+        expect(yield* harness.turnStarts).toEqual([]);
+        yield* harness.advance("1 seconds");
+        expect(yield* harness.turnStarts).toHaveLength(1);
+
+        for (let index = 1; index < 20; index += 1) {
+          yield* harness.defer.create({ threadId: THREAD_ID, note: `loop ${index}`, at: "in 0s" });
+          yield* harness.advance("30 seconds");
+        }
         const error = yield* harness.defer
-          .create({ threadId: THREAD_ID, note: "x", check: "true" })
+          .create({ threadId: THREAD_ID, note: "one more", at: "in 1m" })
           .pipe(Effect.flip);
-        expect(error.message).toContain("Full access or Auto mode");
-        expect(
-          yield* harness.defer.create({ threadId: THREAD_ID, note: "x", at: "in 1m" }),
-        ).toMatch(/^Armed /);
+        expect(error.message).toContain("woken 20 times in the last hour");
       }).pipe(Effect.scoped),
     );
 

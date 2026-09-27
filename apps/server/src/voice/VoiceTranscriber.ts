@@ -82,10 +82,16 @@ export const make = Effect.gen(function* () {
       ? secrets.set(DEEPGRAM_KEY_SECRET, new TextEncoder().encode(apiKey.trim()))
       : secrets.remove(DEEPGRAM_KEY_SECRET)
     ).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("voice: could not update the Deepgram key", { cause }),
-      ),
       Effect.andThen(status),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("voice: could not update the Deepgram key", { cause }).pipe(
+          Effect.andThen(status),
+          Effect.map((current) => ({
+            ...current,
+            message: "Couldn't update the key in this environment's secret store.",
+          })),
+        ),
+      ),
     );
 
   const transcribe: VoiceTranscriber["Service"]["transcribe"] = (input) =>

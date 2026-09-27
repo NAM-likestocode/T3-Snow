@@ -50,6 +50,8 @@ export function useVoiceDictation(input: {
   const recordingRef = useRef<Recording | null>(null);
   // Mirrors `phase` synchronously so rapid toggles never start two recordings.
   const phaseRef = useRef<VoiceDictationPhase>("idle");
+  // False once the composer unmounts, so a late microphone grant is released at once.
+  const mountedRef = useRef(true);
   const callbacksRef = useRef(input);
   const optionsRef = useRef({ modelId, language, engine, environmentId: input.environmentId });
   useEffect(() => {
@@ -143,25 +145,37 @@ export function useVoiceDictation(input: {
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
     } catch (error) {
+      if (!mountedRef.current) return;
       setPhase("idle");
       callbacksRef.current.onError(describeMicrophoneError(error));
       return;
     }
-    const mimeType = pickRecordingMimeType();
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
-    const recording: Recording = {
-      stream,
-      recorder,
-      chunks: [],
-      startedAt: Date.now(),
-      discard: false,
-    };
-    recorder.addEventListener("dataavailable", (event) => {
-      if (event.data.size > 0) recording.chunks.push(event.data);
-    });
-    recorder.addEventListener("stop", () => void finish(recording));
+    if (!mountedRef.current) {
+      for (const track of stream.getTracks()) track.stop();
+      return;
+    }
+    let recording: Recording;
+    try {
+      const mimeType = pickRecordingMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recording = { stream, recorder, chunks: [], startedAt: Date.now(), discard: false };
+      const current = recording;
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size > 0) current.chunks.push(event.data);
+      });
+      recorder.addEventListener("stop", () => void finish(current));
+      recorder.start();
+    } catch (error) {
+      for (const track of stream.getTracks()) track.stop();
+      setPhase("idle");
+      callbacksRef.current.onError(
+        error instanceof Error && error.message
+          ? `Couldn't start recording: ${error.message}`
+          : "Couldn't start recording.",
+      );
+      return;
+    }
     recordingRef.current = recording;
-    recorder.start();
     setElapsedMs(0);
     setPhase("recording");
   }, [finish, setPhase, setSendAfterTranscript]);
@@ -212,16 +226,17 @@ export function useVoiceDictation(input: {
   }, [phase, stop]);
 
   // Never leave the microphone open after the composer unmounts.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
       const recording = recordingRef.current;
       if (!recording) return;
       recording.discard = true;
       if (recording.recorder.state !== "inactive") recording.recorder.stop();
       releaseStream(recording);
-    },
-    [],
-  );
+    };
+  }, []);
 
   return { phase, elapsedMs, modelId, sendQueued, start, stop, stopAndSend, cancel, toggle };
 }

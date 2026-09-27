@@ -8,10 +8,10 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as VoiceTranscriber from "./VoiceTranscriber.ts";
 
-const makeHarness = Effect.fn("makeVoiceHarness")(function* (reply: {
-  readonly status: number;
-  readonly body: unknown;
-}) {
+const makeHarness = Effect.fn("makeVoiceHarness")(function* (
+  reply: { readonly status: number; readonly body: unknown },
+  options: { readonly failWrites?: boolean } = {},
+) {
   const secrets = new Map<string, Uint8Array>();
   const requests = yield* Ref.make<ReadonlyArray<{ url: string; auth: string | undefined }>>([]);
   const client = HttpClient.make((request) =>
@@ -31,7 +31,10 @@ const makeHarness = Effect.fn("makeVoiceHarness")(function* (reply: {
     Layer.mock(ServerSecretStore.ServerSecretStore)({
       // Lazy, like the real store: every read sees the latest value.
       get: (name) => Effect.sync(() => Option.fromNullishOr(secrets.get(name))),
-      set: (name, value) => Effect.sync(() => void secrets.set(name, value)),
+      set: (name, value) =>
+        options.failWrites
+          ? Effect.die(new Error("disk full"))
+          : Effect.sync(() => void secrets.set(name, value)),
       remove: (name) => Effect.sync(() => void secrets.delete(name)),
     }),
     Layer.succeed(HttpClient.HttpClient, client),
@@ -78,6 +81,16 @@ describe("VoiceTranscriber", () => {
       expect(yield* harness.voice.transcribe({ ...clip, language: "" })).toEqual({
         text: null,
         message: "Deepgram rejected the API key. Check it in Settings → Voice.",
+      });
+    }),
+  );
+
+  it.effect("reports a key that could not be saved", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ status: 200, body: {} }, { failWrites: true });
+      expect(yield* harness.voice.setDeepgramKey("dg-secret")).toEqual({
+        deepgramKeySet: false,
+        message: "Couldn't update the key in this environment's secret store.",
       });
     }),
   );

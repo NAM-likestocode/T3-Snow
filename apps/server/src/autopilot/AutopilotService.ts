@@ -60,6 +60,9 @@ const STATE_FILE_NAME = "autopilot.json";
 const PREAMBLE_KEY = "autopilot";
 /** Safety net for a settle that no event announced, e.g. a wake-up cancelled while idle. */
 const SWEEP_INTERVAL = "30 seconds";
+/** Autopilot pauses itself after this many turns or this long, whichever comes first. */
+export const AUTOPILOT_MAX_TURNS = 100;
+export const AUTOPILOT_MAX_DURATION_MS = 4 * 60 * 60 * 1000;
 
 export const AUTOPILOT_USAGE = "Usage: /autopilot <end goal>";
 export const AUTOPILOT_BUSY =
@@ -83,6 +86,10 @@ interface ThreadAutopilot {
   since: string;
   readonly startedAt: string;
   status: AutopilotStatus;
+  /** Budget since the last start or resume. */
+  budgetSince: number;
+  turns: number;
+  lastTurnId: string | null;
 }
 
 const PersistedStates = Schema.Array(
@@ -215,7 +222,15 @@ export const make = Effect.gen(function* () {
         }
 
         const startedAt = yield* isoNow;
-        states.set(threadId, { goal, since: startedAt, startedAt, status: "active" });
+        states.set(threadId, {
+          goal,
+          since: startedAt,
+          startedAt,
+          status: "active",
+          budgetSince: yield* Clock.currentTimeMillis,
+          turns: 0,
+          lastTurnId: thread.latestTurn?.turnId ?? null,
+        });
         yield* preamble.setStanding(threadId, PREAMBLE_KEY, buildAutopilotInstructions(goal));
         const sent = yield* dispatch({
           type: "thread.turn.start",
@@ -274,12 +289,28 @@ export const make = Effect.gen(function* () {
         if (!state || state.status !== "paused") return false;
         state.status = "active";
         state.since = yield* isoNow;
+        state.budgetSince = yield* Clock.currentTimeMillis;
+        state.turns = 0;
         yield* preamble.setStanding(threadId, PREAMBLE_KEY, buildAutopilotInstructions(state.goal));
         yield* recordChange;
         yield* wakeQueue.deliver({ threadId, text: AUTOPILOT_RESUME_MESSAGE, source: "autopilot" });
         return true;
       }),
     );
+
+  /** Stops steering the agent until the user resumes; the running turn finishes normally. */
+  const pauseForBudget = (threadId: ThreadId, state: ThreadAutopilot) =>
+    Effect.gen(function* () {
+      state.status = "paused";
+      yield* preamble.setStanding(threadId, PREAMBLE_KEY, null);
+      yield* recordChange;
+      yield* appendActivity(
+        threadId,
+        "autopilot.paused",
+        `Autopilot paused: budget reached (${AUTOPILOT_MAX_TURNS} turns or 4 hours). Resume to keep going.`,
+        {},
+      );
+    });
 
   /** Turns Autopilot off once the thread has nothing left running or coming. */
   const checkSettled = (threadId: ThreadId) =>
@@ -290,6 +321,14 @@ export const make = Effect.gen(function* () {
         const thread = yield* readShell(threadId);
         if (!thread || thread.archivedAt !== null) return yield* clear(threadId);
         const turn = thread.latestTurn;
+        if (turn && turn.turnId !== state.lastTurnId) {
+          state.lastTurnId = turn.turnId;
+          state.turns += 1;
+        }
+        const elapsed = (yield* Clock.currentTimeMillis) - state.budgetSince;
+        if (state.turns > AUTOPILOT_MAX_TURNS || elapsed >= AUTOPILOT_MAX_DURATION_MS) {
+          return yield* pauseForBudget(threadId, state);
+        }
         // The goal (or resume) turn has to have started and ended first.
         if (!turn || turn.requestedAt < state.since) return;
         if (ThreadWakeQueue.isThreadBusy(thread) || thread.backgroundLiveness) return;
@@ -363,6 +402,9 @@ export const make = Effect.gen(function* () {
             since: entry.startedAt,
             startedAt: entry.startedAt,
             status: "paused",
+            budgetSince: 0,
+            turns: 0,
+            lastTurnId: null,
           });
         }
         yield* recordChange;

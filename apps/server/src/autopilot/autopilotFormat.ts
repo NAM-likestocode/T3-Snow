@@ -14,7 +14,7 @@ export function buildAutopilotGoalMessage(goal: string): string {
 }
 
 export const AUTOPILOT_RESUME_MESSAGE =
-  "Autopilot resumed after T3 Code restarted. Check where the work stands, then continue toward the end goal.";
+  "Autopilot resumed. Check where the work stands, then continue toward the end goal.";
 
 /** Sent before every turn while Autopilot is on. */
 export function buildAutopilotInstructions(goal: string): string {

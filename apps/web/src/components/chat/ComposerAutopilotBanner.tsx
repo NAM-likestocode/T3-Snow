@@ -12,7 +12,7 @@ import { ComposerBanner } from "./ComposerBanner";
 
 /**
  * T3-Snow: shows the thread's Autopilot goal while it is on, with Stop, and
- * Resume after a restart paused it.
+ * Resume when a restart or its turn/time budget paused it.
  */
 export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
   environmentId,
@@ -50,10 +50,7 @@ export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
             <span className="shrink-0 font-medium">
               {paused ? "Autopilot paused" : "Autopilot"}
             </span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">
-              {paused ? "T3 Code restarted. " : ""}
-              {autopilot.goal}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-muted-foreground">{autopilot.goal}</span>
           </ComposerBanner.Content>
           <ComposerBanner.Actions>
             {paused ? (

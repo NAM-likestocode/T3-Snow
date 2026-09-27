@@ -58,7 +58,10 @@ import {
   DEFER_MAX_CAPTURE_BYTES,
   DEFER_MAX_TIMEOUT_MS,
   DEFER_MAX_TRIGGERS_PER_THREAD,
+  DEFER_MAX_FIRES_PER_HOUR,
   DEFER_MAX_TRIGGERS_TOTAL,
+  DEFER_MIN_DELAY_MS,
+  DEFER_NOT_RUN_EXIT_CODE,
   DEFER_MIN_POLL_MS,
   DEFER_RUN_TIMEOUT_MS,
   DEFER_TIMED_OUT_EXIT_CODE,
@@ -73,8 +76,12 @@ import {
 
 const STATE_FILE_NAME = "defer-triggers.json";
 
-/** Runtime modes where T3 may run an agent's `check`/`run` commands without asking. */
-const COMMAND_RUNTIME_MODES = new Set(["full-access", "auto"]);
+/**
+ * Commands run on the host outside any provider sandbox, so only threads the
+ * user put in Full access may use them. Checked when arming and again before
+ * every command, in case the user changed the mode since.
+ */
+const COMMAND_RUNTIME_MODE = "full-access";
 
 export class DeferRequestError extends Schema.TaggedError<DeferRequestError>()(
   "DeferRequestError",
@@ -183,6 +190,8 @@ export const make = Effect.gen(function* () {
 
   const statePath = path.join(serverConfig.stateDir, STATE_FILE_NAME);
   const triggers = new Map<string, ArmedTrigger>();
+  /** Fire times per thread over the last hour, for the loop guard. */
+  const recentFires = new Map<ThreadId, number[]>();
   const triggerLock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<DeferTriggersSnapshot>({ triggers: [] });
 
@@ -345,10 +354,20 @@ export const make = Effect.gen(function* () {
         return recordChange;
       }),
     );
+    const now = yield* nowMs;
+    recentFires.set(trigger.threadId, [...firesInLastHour(trigger.threadId, now), now]);
     let run: DeferRunResult | undefined;
     if (trigger.run) {
-      const result = yield* runShell(trigger.run, trigger.cwd, DEFER_RUN_TIMEOUT_MS);
-      run = { command: trigger.run, exitCode: result.exitCode, output: result.output };
+      run = (yield* commandsAllowed(trigger.threadId))
+        ? {
+            command: trigger.run,
+            ...(yield* runShell(trigger.run, trigger.cwd, DEFER_RUN_TIMEOUT_MS)),
+          }
+        : {
+            command: trigger.run,
+            exitCode: DEFER_NOT_RUN_EXIT_CODE,
+            output: "Not run: this thread is no longer in Full access mode.",
+          };
     }
     yield* Effect.logInfo("defer: trigger fired", {
       threadId: trigger.threadId,
@@ -373,6 +392,9 @@ export const make = Effect.gen(function* () {
         if (remaining <= 0) break;
         yield* Effect.sleep(Duration.millis(Math.min(delay, remaining)));
         if ((yield* nowMs) >= trigger.firesAt) break;
+        if (!(yield* commandsAllowed(trigger.threadId))) {
+          return yield* fire(trigger, { kind: "blocked", check: trigger.check! });
+        }
         const result = yield* runShell(trigger.check!, trigger.cwd, DEFER_CHECK_RUN_TIMEOUT_MS);
         trigger.checks += 1;
         trigger.lastExit = result.exitCode;
@@ -401,6 +423,12 @@ export const make = Effect.gen(function* () {
 
   const reject = (detail: string) => Effect.fail(new DeferRequestError({ detail }));
 
+  const firesInLastHour = (threadId: ThreadId, now: number) =>
+    (recentFires.get(threadId) ?? []).filter((at) => now - at < 60 * 60_000);
+
+  const commandsAllowed = (threadId: ThreadId) =>
+    readThread(threadId).pipe(Effect.map((thread) => thread?.runtimeMode === COMMAND_RUNTIME_MODE));
+
   const create: DeferService["Service"]["create"] = Effect.fn("DeferService.create")(
     function* (input) {
       const note = input.note?.trim() ?? "";
@@ -425,11 +453,18 @@ export const make = Effect.gen(function* () {
 
       const thread = yield* readThread(input.threadId);
       if (!thread) return yield* reject("this thread no longer exists");
-      if ((check || run) && !COMMAND_RUNTIME_MODES.has(thread.runtimeMode)) {
+      if ((check || run) && thread.runtimeMode !== COMMAND_RUNTIME_MODE) {
         return yield* reject(
-          "`check` and `run` need this thread in Full access or Auto mode, because T3 Code runs them without asking. Use `at` and check manually, or ask the user to switch modes.",
+          "`check` and `run` need this thread in Full access mode, because T3 Code runs them on the host without a sandbox or approval. Use `at` and check manually, or ask the user to switch modes.",
         );
       }
+      if (firesInLastHour(input.threadId, now).length >= DEFER_MAX_FIRES_PER_HOUR) {
+        return yield* reject(
+          `this thread has already been woken ${DEFER_MAX_FIRES_PER_HOUR} times in the last hour; finish the work or ask the user before arming more wake-ups`,
+        );
+      }
+      // A wake-up can never fire sooner than this, so it cannot drive a tight loop.
+      if (firesAt !== undefined) firesAt = Math.max(firesAt, now + DEFER_MIN_DELAY_MS);
       const cwd = yield* resolveCwd(thread);
 
       const pollMs = Math.max(DEFER_MIN_POLL_MS, input.pollMs ?? DEFER_DEFAULT_POLL_MS);
