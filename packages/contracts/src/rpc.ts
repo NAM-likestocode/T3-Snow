@@ -49,7 +49,6 @@ import {
   AttachmentUploadSigningKeyError,
 } from "./assets.ts";
 import { DeferCancelInput, DeferCancelResult, DeferTriggersSnapshot } from "./defer.ts";
-import { HelperRunsSnapshot, HelperStopInput, HelperStopResult } from "./helpers.ts";
 import {
   AutopilotSnapshot,
   AutopilotStartInput,
@@ -470,9 +469,6 @@ export const WS_METHODS = {
   // T3-Snow deferred wake-ups
   subscribeDeferTriggers: "subscribeDeferTriggers",
   deferCancel: "defer.cancel",
-  // T3-Snow helpers
-  subscribeHelperRuns: "subscribeHelperRuns",
-  helperStop: "helpers.stop",
   // T3-Snow Autopilot
   subscribeAutopilot: "subscribeAutopilot",
   autopilotStart: "autopilot.start",
@@ -1338,19 +1334,6 @@ const WsDeferCancelRpc = Rpc.make(WS_METHODS.deferCancel, {
   error: EnvironmentAuthorizationError,
 });
 
-const WsSubscribeHelperRunsRpc = Rpc.make(WS_METHODS.subscribeHelperRuns, {
-  payload: Schema.Struct({}),
-  success: HelperRunsSnapshot,
-  error: EnvironmentAuthorizationError,
-  stream: true,
-});
-
-const WsHelperStopRpc = Rpc.make(WS_METHODS.helperStop, {
-  payload: HelperStopInput,
-  success: HelperStopResult,
-  error: EnvironmentAuthorizationError,
-});
-
 const WsSubscribeAutopilotRpc = Rpc.make(WS_METHODS.subscribeAutopilot, {
   payload: Schema.Struct({}),
   success: AutopilotSnapshot,
@@ -1690,8 +1673,6 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeDeviceStateRpc,
   WsSubscribeDeferTriggersRpc,
   WsDeferCancelRpc,
-  WsSubscribeHelperRunsRpc,
-  WsHelperStopRpc,
   WsSubscribeAutopilotRpc,
   WsAutopilotStartRpc,
   WsAutopilotStopRpc,

@@ -1276,16 +1276,6 @@ export const ServerSettings = Schema.Struct({
   ),
   /** T3-Snow: Council defaults; a null model means the thread's own model. */
   council: CouncilSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
-  /** T3-Snow: the model helpers run on when the agent names none. */
-  helperModelSelection: ModelSelection.pipe(
-    Schema.withDecodingDefault(
-      Effect.succeed({
-        instanceId: ProviderInstanceId.make("claudeAgent"),
-        model: "claude-opus-5-5",
-        options: [{ id: "effort", value: "medium" }],
-      }),
-    ),
-  ),
   /**
    * The merge method pull requests start with; `null` reuses the method
    * last chosen on this device. Server-side so a project can override it
@@ -1571,7 +1561,6 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
-  helperModelSelection: Schema.optionalKey(ModelSelection),
   council: Schema.optionalKey(
     Schema.Struct({
       rounds: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3 }))),

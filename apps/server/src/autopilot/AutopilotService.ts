@@ -6,8 +6,8 @@
  * While Autopilot is on, every turn the thread's agent receives starts with
  * the Autopilot instructions (through ThreadTurnPreamble), and questions the
  * agent asks are answered for it. It turns itself off once the thread is
- * settled: no turn running, nothing waiting to be delivered, no helpers
- * running and no wake-ups armed. It never approves tool calls.
+ * settled: no turn running, nothing waiting to be delivered, and no
+ * wake-ups armed. It never approves tool calls.
  *
  * State lives in memory and is mirrored to `<stateDir>/autopilot.json`. After
  * a restart, a thread that still had Autopilot on shows it as paused until the
@@ -43,7 +43,6 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import * as ServerConfig from "../config.ts";
 import * as DeferService from "../defer/DeferService.ts";
-import * as HelperService from "../helpers/HelperService.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -104,7 +103,6 @@ export const make = Effect.gen(function* () {
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const wakeQueue = yield* ThreadWakeQueue.ThreadWakeQueue;
   const preamble = yield* ThreadTurnPreamble.ThreadTurnPreamble;
-  const helpers = yield* Effect.serviceOption(HelperService.HelperService);
   const defer = yield* Effect.serviceOption(DeferService.DeferService);
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -185,7 +183,6 @@ export const make = Effect.gen(function* () {
   const otherWorkPending = (threadId: ThreadId) =>
     Effect.gen(function* () {
       if (yield* wakeQueue.hasPending(threadId)) return true;
-      if (Option.isSome(helpers) && (yield* helpers.value.hasRunning(threadId))) return true;
       if (Option.isSome(defer) && (yield* defer.value.hasArmed(threadId))) return true;
       return false;
     });

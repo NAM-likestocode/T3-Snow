@@ -35,7 +35,6 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
-import { listHelperModelNames, resolveHelperModel } from "../helpers/helperModels.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { ProviderRegistry } from "../provider/Services/ProviderRegistry.ts";
@@ -67,6 +66,7 @@ import {
   type CouncilRound,
   type CouncilSeatId,
 } from "./councilFormat.ts";
+import { listCouncilModelNames, resolveCouncilModel } from "./councilModels.ts";
 
 const PREAMBLE_KEY = "council";
 /** How often a posted report re-checks whether the thread's turn has ended. */
@@ -154,7 +154,7 @@ export const make = Effect.gen(function* () {
       const providers = yield* providerRegistry.getProviders;
       if (parsed.kind === "help") return { info: COUNCIL_USAGE };
       if (parsed.kind === "models") {
-        return { info: `Usable council models: ${listHelperModelNames(providers)}.` };
+        return { info: `Usable council models: ${listCouncilModelNames(providers)}.` };
       }
       if (parsed.kind === "error") return { info: parsed.message };
 
@@ -163,7 +163,7 @@ export const make = Effect.gen(function* () {
         effort: string | undefined,
         base: ModelSelection,
       ) => {
-        const attempt = resolveHelperModel({
+        const attempt = resolveCouncilModel({
           providers,
           defaultSelection: base,
           requested,
@@ -173,7 +173,7 @@ export const make = Effect.gen(function* () {
         // The default effort is a preference; a model without it runs as configured.
         return attempt.ok || effort
           ? attempt
-          : resolveHelperModel({
+          : resolveCouncilModel({
               providers,
               defaultSelection: base,
               requested,

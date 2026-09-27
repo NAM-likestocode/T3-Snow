@@ -169,30 +169,6 @@ run commands only work in **Full access** or **Auto** mode. They last until T3
 Code restarts; after a restart, each one that never fired is reported to its
 thread so the agent can check on the work itself.
 
-## Helpers
-
-Agents can hand parts of a task to helpers: other agents that work in their own
-threads while the first agent keeps going. A helper can run on any model you have
-set up, so a Codex thread can ask Claude for a review, and the other way round.
-When a helper finishes, its report arrives in the thread that started it as a new
-message, after any running turn is done.
-
-Running helpers appear above the composer with their model and time so far.
-Click a helper's name to watch its thread, or × to stop it. Helpers get the same
-permission mode as the thread that started them; the built-in **scout**,
-**reviewer**, and **researcher** helpers work in plan mode so they don't change
-files (Claude enforces this; Codex follows it as an instruction). Up to 4 helpers
-run at once.
-
-Helpers use the model in **Settings → General → Helper model** (Claude Opus 5.5
-at medium effort by default) unless the agent picks another. To add your own
-helper types, put Markdown files in `~/.t3/agents/`, or in a project's
-`.t3/agents/`, `.claude/agents/`, or `.pi/agents/` folder. The file name is the
-helper's name; optional frontmatter sets `description`, `tools`, `model`, and
-`effort`, and the body becomes the helper's instructions. A `tools` list without
-edit, write, or shell tools makes the helper read-only. Helpers still running
-when T3 Code restarts are reported to their thread as failed.
-
 ## Autopilot
 
 Send `/autopilot <end goal>` in a thread and the agent works on that goal on its
@@ -203,7 +179,7 @@ and continue". Autopilot works the same with every provider.
 Autopilot starts only when the thread is idle with nothing queued, so send a first
 message in a new thread before using it. While it is on, a banner above the composer
 shows the goal and a **Stop** button. It turns itself off once the agent is finished
-and has no helpers or wake-ups still pending.
+and has no wake-ups still pending.
 
 Autopilot does not change permissions or approve anything for you. In
 **Approval required** mode it stops at each approval prompt, so switch to **Auto** or

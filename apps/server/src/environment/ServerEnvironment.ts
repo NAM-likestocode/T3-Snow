@@ -218,7 +218,6 @@ export const make = Effect.gen(function* () {
       connectionProbe: true,
       attachmentUploads: true,
       deferTriggers: true,
-      helperRuns: true,
       autopilot: true,
       council: true,
       subagentControl: true,

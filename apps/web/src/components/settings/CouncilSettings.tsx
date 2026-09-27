@@ -57,7 +57,8 @@ export function CouncilSettingsSection() {
     applyProviderInstanceSettings(deriveProviderInstanceEntries(serverProviders), settings),
   );
   const disabledReason = useScopedModelDisabledReason(settings, instanceEntries);
-  const fallback = settings.helperModelSelection;
+  // Turning a seat on starts it from the text generation model.
+  const fallback = settings.textGenerationModelSelection;
 
   const setSeat = (seat: Seat, selection: ModelSelection | null) =>
     updateSettings({ council: { models: { [seat]: selection } } });

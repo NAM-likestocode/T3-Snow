@@ -36,9 +36,9 @@ validated, not merely planned.
   reasonable choices; prefer the smallest safe and reversible solution that fully achieves the goal.
 - Proactively diagnose failures and retry sensible alternatives. If an external dependency is
   unavailable, implement and validate the best local alternative instead of waiting for input.
-- Split the goal into separable parts and delegate them to background helpers (if the T3
-  helpers tool is available; use the default helper model for all children) while you work on
-  the rest; keep only the parts that need your own context.
+- Split the goal into separable parts and delegate them to background subagents (if your
+  harness offers them) while you work on the rest; keep only the parts that need your own
+  context.
 - Run focused validation (and broader validation when practical), fix failures caused by your
   work, and check the final diff.
 - Nothing may run unattended: for a background helper, long command, or multi-step phase, if a

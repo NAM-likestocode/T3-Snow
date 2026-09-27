@@ -23,7 +23,6 @@ export * from "./keybindings.ts";
 export * from "./server.ts";
 export * from "./voice.ts";
 export * from "./defer.ts";
-export * from "./helpers.ts";
 export * from "./autopilot.ts";
 export * from "./council.ts";
 export * from "./subagentControl.ts";

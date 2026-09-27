@@ -17,18 +17,6 @@ When the t3-code MCP server exposes defer, use it instead of sleeping or polling
 - If check or run is refused because of the permission mode, use at and check manually.
 </deferred_wakeups>`;
 
-// T3-Snow: helpers through the t3-code `subagent` tool, following the Pi delegation policy.
-const HELPER_DELEGATION_INSTRUCTIONS = `<helpers>
-When the t3-code MCP server exposes subagent, use it to hand work to helpers: other agents that run in their own threads, on any configured model.
-- Delegate by default, not as a last resort. Before any task with more than one separable part, split it and hand each separable part to a helper (a feature or module, a broad investigation, an independent review, verification, research). Keep working on the rest; several helpers may run at once on disjoint scopes.
-- Helpers run in the background; you get a message beginning with [Helper "<name>" …] when one finishes. Never poll or idle for it. If nothing else remains, end your turn and the report arrives on its own. Use mode "wait" only when the result is needed before the next step.
-- Give the helper every path, command and acceptance criterion; it cannot see this conversation. Avoid two helpers editing the same files.
-- Keep for yourself: trivial steps, single small edits, quick answers, and work that needs context you cannot write down.
-- Treat reports as evidence, not authority: check the diff and run the relevant tests before building on them.
-- Profiles: worker (default, full tools), scout (read-only code map), reviewer (read-only review), researcher (web research). subagent with action "list" shows custom profiles and usable models. Leave model unset to use the helper model from settings.
-- At most 4 helpers run at once, and helpers can start helpers only 2 levels deep.
-</helpers>`;
-
 /**
  * Shared runtime context in sections; omit model and effort when the harness manages them
  * dynamically. `modelName` is the display name users see in the model picker; `model` is the slug.
@@ -39,7 +27,7 @@ export function buildRuntimeInstructionSections(runtime: {
   readonly model?: string | undefined;
   readonly modelName?: string | undefined;
   readonly reasoningEffort?: string | undefined;
-}): { readonly runtime: string; readonly wakeups: string; readonly helpers: string } {
+}): { readonly runtime: string; readonly wakeups: string } {
   const harness = toSingleLine(runtime.harness);
   const model = toSingleLine(runtime.model ?? "");
   const modelName = toSingleLine(runtime.modelName ?? "");
@@ -51,7 +39,6 @@ export function buildRuntimeInstructionSections(runtime: {
   return {
     runtime: `<runtime_info>In case you're asked: you are running in T3 Code through the ${harness} harness${modelInfo}${effortInfo}. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>\n\n${PULL_REQUEST_LINKING_INSTRUCTIONS}`,
     wakeups: DEFERRED_WAKEUP_INSTRUCTIONS,
-    helpers: HELPER_DELEGATION_INSTRUCTIONS,
   };
 }
 
@@ -60,7 +47,7 @@ export function buildRuntimeInstructions(
   runtime: Parameters<typeof buildRuntimeInstructionSections>[0],
 ): string {
   const sections = buildRuntimeInstructionSections(runtime);
-  return `${sections.runtime}\n\n${sections.wakeups}\n\n${sections.helpers}`;
+  return `${sections.runtime}\n\n${sections.wakeups}`;
 }
 
 function toSingleLine(value: string): string {

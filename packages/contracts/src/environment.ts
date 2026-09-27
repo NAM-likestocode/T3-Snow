@@ -157,8 +157,6 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subscribeDeferTriggers / defer.cancel and the defer MCP tool. */
   deferTriggers: Schema.optionalKey(Schema.Boolean),
-  /** T3-Snow: server exposes subscribeHelperRuns / helpers.stop and the subagent MCP tool. */
-  helperRuns: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subscribeAutopilot / autopilot.start|stop|resume. */
   autopilot: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subscribeCouncil / council.prepare|start|cancel. */

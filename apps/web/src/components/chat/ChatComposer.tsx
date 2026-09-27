@@ -134,7 +134,6 @@ import {
   type ComposerTasksProgress,
 } from "./ComposerTasksBadge";
 import { ComposerDeferBanner } from "./ComposerDeferBanner";
-import { ComposerHelpersBanner } from "./ComposerHelpersBanner";
 import { ComposerAutopilotBanner } from "./ComposerAutopilotBanner";
 import { ComposerCouncilBanner } from "./ComposerCouncilBanner";
 import { useCouncilSupported } from "~/state/council";
@@ -6465,7 +6464,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </ComposerBanner.Attachment>
           ) : null}
           <ComposerDeferBanner environmentId={environmentId} threadId={activeThreadId} />
-          <ComposerHelpersBanner environmentId={environmentId} threadId={activeThreadId} />
           <ComposerAutopilotBanner environmentId={environmentId} threadId={activeThreadId} />
           <ComposerCouncilBanner environmentId={environmentId} threadId={activeThreadId} />
         </ComposerBanner.Column>
