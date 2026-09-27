@@ -246,6 +246,11 @@ language for multilingual models, or remove a downloaded model in
 **Settings → Voice**. The first time you record, allow microphone access when your
 system asks.
 
+For faster, more accurate transcription, choose **Deepgram (cloud)** in **Settings →
+Voice** and paste your API key from [console.deepgram.com](https://console.deepgram.com).
+Your recording then goes to Deepgram through the computer running T3 Code, which keeps
+the key; devices connected to it use the same key. Deepgram bills your account.
+
 ## Commands and skills
 
 Type `/` for commands or `$` to add a skill from the selected environment and

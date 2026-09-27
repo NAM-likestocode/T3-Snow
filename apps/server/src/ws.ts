@@ -161,6 +161,7 @@ import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as CouncilService from "./council/CouncilService.ts";
 import * as SubagentControl from "./agents/SubagentControl.ts";
+import * as VoiceTranscriber from "./voice/VoiceTranscriber.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -561,6 +562,7 @@ const makeWsRpcLayer = (
       const autopilotService = yield* Effect.serviceOption(AutopilotService.AutopilotService);
       const councilService = yield* Effect.serviceOption(CouncilService.CouncilService);
       const subagentControl = yield* Effect.serviceOption(SubagentControl.SubagentControl);
+      const voiceTranscriber = yield* Effect.serviceOption(VoiceTranscriber.VoiceTranscriber);
       const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
       const remoteOpenTargets = yield* RemoteOpenTargets.RemoteOpenTargets;
       const gitWorkflow = yield* GitWorkflowService.GitWorkflowService;
@@ -3711,6 +3713,30 @@ const makeWsRpcLayer = (
               ? subagentControl.value.message(input)
               : Effect.succeed({ ok: false, message: "Not available on this server." }),
             { "rpc.aggregate": "subagent" },
+          ),
+        [WS_METHODS.voiceStatus]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceStatus,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.status
+              : Effect.succeed({ deepgramKeySet: false }),
+            { "rpc.aggregate": "voice" },
+          ),
+        [WS_METHODS.voiceSetDeepgramKey]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceSetDeepgramKey,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.setDeepgramKey(input.apiKey)
+              : Effect.succeed({ deepgramKeySet: false }),
+            { "rpc.aggregate": "voice" },
+          ),
+        [WS_METHODS.voiceTranscribe]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceTranscribe,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.transcribe(input)
+              : Effect.succeed({ text: null, message: "Not available on this server." }),
+            { "rpc.aggregate": "voice" },
           ),
         [WS_METHODS.subscribeDeviceState]: (_input) =>
           observeRpcStream(

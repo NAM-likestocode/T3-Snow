@@ -27,6 +27,14 @@ import {
   SettingsUnavailableGroup,
 } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
+import { DeepgramKeyRow } from "./DeepgramKeyRow";
+import { usePrimaryEnvironmentId } from "../../state/environments";
+import { useCloudVoiceSupported } from "../../state/voice";
+
+const ENGINE_LABELS = {
+  local: "On this device (Whisper)",
+  deepgram: "Deepgram (cloud)",
+} as const;
 
 const isVoiceModelId = (value: unknown): value is VoiceModelId =>
   typeof value === "string" && (VOICE_MODEL_IDS as ReadonlyArray<string>).includes(value);
@@ -37,6 +45,9 @@ export function VoiceSettings() {
   const updateSettings = useUpdateClientSettings();
   const navigate = useNavigate();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const cloudSupported = useCloudVoiceSupported(primaryEnvironmentId);
+  const engine = cloudSupported ? settings.voiceEngine : "local";
   const supported = isVoiceDictationSupported();
   const model = WHISPER_MODELS[settings.voiceModel];
   const status = useWhisperStore((state) => state.statusByRepo[model.repo]);
@@ -85,7 +96,7 @@ export function VoiceSettings() {
         >
           <SettingsRow
             {...searchableSetting("voice-dictation-enabled")}
-            description="Speak into the composer. Whisper runs on this device, so it's free, private, and works offline once the model is downloaded."
+            description="Speak into the composer. Whisper runs on this device for free and offline; Deepgram is faster and more accurate, using your own API key."
             resetAction={
               settings.voiceDictationEnabled !== DEFAULT_CLIENT_SETTINGS.voiceDictationEnabled ? (
                 <SettingResetButton
@@ -109,78 +120,110 @@ export function VoiceSettings() {
               />
             }
           />
+          {settings.voiceDictationEnabled && cloudSupported ? (
+            <SettingsRow
+              {...searchableSetting("voice-engine")}
+              description="Where your recording is turned into text. Deepgram sends the audio to Deepgram through the computer running T3 Code."
+              control={
+                <Select
+                  value={engine}
+                  onValueChange={(value) => {
+                    if (value === "local" || value === "deepgram") {
+                      updateSettings({ voiceEngine: value });
+                    }
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-full sm:w-52" aria-label="Transcription">
+                    <SelectValue>{ENGINE_LABELS[engine]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {(["local", "deepgram"] as const).map((value) => (
+                      <SelectItem hideIndicator key={value} value={value}>
+                        {ENGINE_LABELS[value]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              }
+            />
+          ) : null}
+          {settings.voiceDictationEnabled && engine === "deepgram" && primaryEnvironmentId ? (
+            <DeepgramKeyRow environmentId={primaryEnvironmentId} />
+          ) : null}
           {settings.voiceDictationEnabled ? (
             <>
-              <SettingsRow
-                {...searchableSetting("voice-model")}
-                description={model.description}
-                status={
-                  <span className="inline-flex items-center gap-1.5">
-                    {isDownloading ? <Spinner size="xs" /> : null}
-                    {modelStatus}
-                  </span>
-                }
-                resetAction={
-                  settings.voiceModel !== DEFAULT_CLIENT_SETTINGS.voiceModel ? (
-                    <SettingResetButton
-                      label="Whisper model"
-                      onClick={() =>
-                        updateSettings({ voiceModel: DEFAULT_CLIENT_SETTINGS.voiceModel })
-                      }
-                    />
-                  ) : null
-                }
-                control={
-                  <div className="flex w-full items-center gap-2 sm:w-auto">
-                    {isDownloaded ? (
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        disabled={removing || isDownloading}
-                        onClick={() => void removeModel()}
+              {engine === "local" ? (
+                <SettingsRow
+                  {...searchableSetting("voice-model")}
+                  description={model.description}
+                  status={
+                    <span className="inline-flex items-center gap-1.5">
+                      {isDownloading ? <Spinner size="xs" /> : null}
+                      {modelStatus}
+                    </span>
+                  }
+                  resetAction={
+                    settings.voiceModel !== DEFAULT_CLIENT_SETTINGS.voiceModel ? (
+                      <SettingResetButton
+                        label="Whisper model"
+                        onClick={() =>
+                          updateSettings({ voiceModel: DEFAULT_CLIENT_SETTINGS.voiceModel })
+                        }
+                      />
+                    ) : null
+                  }
+                  control={
+                    <div className="flex w-full items-center gap-2 sm:w-auto">
+                      {isDownloaded ? (
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          disabled={removing || isDownloading}
+                          onClick={() => void removeModel()}
+                        >
+                          Remove
+                        </Button>
+                      ) : (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          disabled={isDownloading}
+                          onClick={() => preloadWhisperModel(model.id)}
+                        >
+                          Download
+                        </Button>
+                      )}
+                      <Select
+                        value={settings.voiceModel}
+                        onValueChange={(value) => {
+                          if (isVoiceModelId(value)) updateSettings({ voiceModel: value });
+                        }}
                       >
-                        Remove
-                      </Button>
-                    ) : (
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        disabled={isDownloading}
-                        onClick={() => preloadWhisperModel(model.id)}
-                      >
-                        Download
-                      </Button>
-                    )}
-                    <Select
-                      value={settings.voiceModel}
-                      onValueChange={(value) => {
-                        if (isVoiceModelId(value)) updateSettings({ voiceModel: value });
-                      }}
-                    >
-                      <SelectTrigger
-                        size="sm"
-                        className="w-full sm:w-52"
-                        aria-label="Whisper model"
-                      >
-                        <SelectValue>{model.label}</SelectValue>
-                      </SelectTrigger>
-                      <SelectPopup align="end" alignItemWithTrigger={false}>
-                        {VOICE_MODEL_IDS.map((id) => (
-                          <SelectItem hideIndicator key={id} value={id}>
-                            <span className="flex w-full items-center justify-between gap-3">
-                              <span>{WHISPER_MODELS[id].label}</span>
-                              <span className="text-muted-foreground text-xs tabular-nums">
-                                {downloaded.has(id) ? "Downloaded" : WHISPER_MODELS[id].sizeLabel}
+                        <SelectTrigger
+                          size="sm"
+                          className="w-full sm:w-52"
+                          aria-label="Whisper model"
+                        >
+                          <SelectValue>{model.label}</SelectValue>
+                        </SelectTrigger>
+                        <SelectPopup align="end" alignItemWithTrigger={false}>
+                          {VOICE_MODEL_IDS.map((id) => (
+                            <SelectItem hideIndicator key={id} value={id}>
+                              <span className="flex w-full items-center justify-between gap-3">
+                                <span>{WHISPER_MODELS[id].label}</span>
+                                <span className="text-muted-foreground text-xs tabular-nums">
+                                  {downloaded.has(id) ? "Downloaded" : WHISPER_MODELS[id].sizeLabel}
+                                </span>
                               </span>
-                            </span>
-                          </SelectItem>
-                        ))}
-                      </SelectPopup>
-                    </Select>
-                  </div>
-                }
-              />
-              {model.multilingual ? (
+                            </SelectItem>
+                          ))}
+                        </SelectPopup>
+                      </Select>
+                    </div>
+                  }
+                />
+              ) : null}
+              {model.multilingual || engine === "deepgram" ? (
                 <SettingsRow
                   {...searchableSetting("voice-language")}
                   description="Pin the spoken language for faster, more reliable results."

@@ -167,6 +167,7 @@ import * as HelperService from "./helpers/HelperService.ts";
 import * as AutopilotService from "./autopilot/AutopilotService.ts";
 import * as CouncilService from "./council/CouncilService.ts";
 import * as SubagentControl from "./agents/SubagentControl.ts";
+import * as VoiceTranscriber from "./voice/VoiceTranscriber.ts";
 import * as ThreadTurnPreamble from "./wake/ThreadTurnPreamble.ts";
 import * as UsageService from "./usage/UsageService.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
@@ -279,6 +280,7 @@ const ReactorLayerLive = Layer.empty.pipe(
   Layer.provideMerge(PullRequestSyncReactor.layer),
   Layer.provideMerge(ThreadPullRequestReactor.layer),
   Layer.provideMerge(SubagentControl.layer),
+  Layer.provideMerge(VoiceTranscriber.layer.pipe(Layer.provide(ServerSecretStore.layer))),
   Layer.provideMerge(CouncilService.layer),
   Layer.provideMerge(AutopilotService.layer),
   Layer.provideMerge(DeferService.layer),

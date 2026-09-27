@@ -72,6 +72,12 @@ import {
   SubagentTranscriptResult,
 } from "./subagentControl.ts";
 import {
+  VoiceSetDeepgramKeyInput,
+  VoiceStatus,
+  VoiceTranscribeInput,
+  VoiceTranscribeResult,
+} from "./voice.ts";
+import {
   WorktreeSetupCancelInput,
   WorktreeSetupCancelResult,
   WorktreeSetupStreamEvent,
@@ -481,6 +487,10 @@ export const WS_METHODS = {
   subagentTranscript: "subagent.transcript",
   subagentStop: "subagent.stop",
   subagentMessage: "subagent.message",
+  // T3-Snow cloud voice transcription
+  voiceStatus: "voice.status",
+  voiceSetDeepgramKey: "voice.setDeepgramKey",
+  voiceTranscribe: "voice.transcribe",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1409,6 +1419,24 @@ const WsSubagentMessageRpc = Rpc.make(WS_METHODS.subagentMessage, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsVoiceStatusRpc = Rpc.make(WS_METHODS.voiceStatus, {
+  payload: Schema.Struct({}),
+  success: VoiceStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsVoiceSetDeepgramKeyRpc = Rpc.make(WS_METHODS.voiceSetDeepgramKey, {
+  payload: VoiceSetDeepgramKeyInput,
+  success: VoiceStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsVoiceTranscribeRpc = Rpc.make(WS_METHODS.voiceTranscribe, {
+  payload: VoiceTranscribeInput,
+  success: VoiceTranscribeResult,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsOrchestrationDispatchCommandRpc = Rpc.make(ORCHESTRATION_WS_METHODS.dispatchCommand, {
   payload: ClientOrchestrationCommand,
   success: OrchestrationRpcSchemas.dispatchCommand.output,
@@ -1675,6 +1703,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubagentTranscriptRpc,
   WsSubagentStopRpc,
   WsSubagentMessageRpc,
+  WsVoiceStatusRpc,
+  WsVoiceSetDeepgramKeyRpc,
+  WsVoiceTranscribeRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,
