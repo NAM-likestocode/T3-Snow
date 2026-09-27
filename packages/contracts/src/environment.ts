@@ -165,6 +165,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   council: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subagent.transcript / subagent.stop / subagent.message. */
   subagentControl: Schema.optionalKey(Schema.Boolean),
+  /** T3-Snow: server exposes voice.status / voice.setDeepgramKey / voice.transcribe. */
+  voiceTranscription: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
