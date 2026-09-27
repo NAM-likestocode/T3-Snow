@@ -545,6 +545,20 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["speech recognition download offline local tiny base small"],
   },
   {
+    id: "voice-engine",
+    title: "Transcription engine",
+    to: "/settings/voice",
+    targetId: "voice-dictation-enabled",
+    searchTerms: ["deepgram cloud whisper local speech to text"],
+  },
+  {
+    id: "voice-deepgram-key",
+    title: "Deepgram API key",
+    to: "/settings/voice",
+    targetId: "voice-dictation-enabled",
+    searchTerms: ["deepgram api key token cloud transcription"],
+  },
+  {
     id: "voice-language",
     title: "Dictation language",
     to: "/settings/voice",

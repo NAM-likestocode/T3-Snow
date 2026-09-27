@@ -6080,6 +6080,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // render that already contains the transcript, so send gating sees it.
   const [voiceSendRequest, setVoiceSendRequest] = useState(0);
   const voiceDictation = useVoiceDictation({
+    environmentId,
     onTranscript: (text, { send }) => {
       if (insertComposerText(text, "cursor", { ensureLeadingBoundary: true })) {
         if (send) setVoiceSendRequest((request) => request + 1);

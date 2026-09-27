@@ -67,3 +67,14 @@ export function describeMicrophoneError(error: unknown): string {
   }
   return error instanceof Error && error.message ? error.message : "Couldn't start recording.";
 }
+
+/** Base64 of a recorded clip, for sending it to the environment. */
+export async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  // Chunked so large clips don't overflow the argument limit of fromCharCode.
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return btoa(binary);
+}

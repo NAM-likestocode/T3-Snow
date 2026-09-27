@@ -132,6 +132,12 @@ import {
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 import {
+  VoiceSetDeepgramKeyInput,
+  VoiceStatus,
+  VoiceTranscribeInput,
+  VoiceTranscribeResult,
+} from "./voice.ts";
+import {
   OrchestrationSearchThreadsError,
   OrchestrationSearchThreadsInput,
   OrchestrationSearchThreadsResult,
@@ -532,7 +538,29 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  // T3-Snow cloud voice transcription
+  voiceStatus: "voice.status",
+  voiceSetDeepgramKey: "voice.setDeepgramKey",
+  voiceTranscribe: "voice.transcribe",
 } as const;
+
+const WsVoiceStatusRpc = Rpc.make(WS_METHODS.voiceStatus, {
+  payload: Schema.Struct({}),
+  success: VoiceStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsVoiceSetDeepgramKeyRpc = Rpc.make(WS_METHODS.voiceSetDeepgramKey, {
+  payload: VoiceSetDeepgramKeyInput,
+  success: VoiceStatus,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsVoiceTranscribeRpc = Rpc.make(WS_METHODS.voiceTranscribe, {
+  payload: VoiceTranscribeInput,
+  success: VoiceTranscribeResult,
+  error: EnvironmentAuthorizationError,
+});
 
 const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
   payload: ServerUpsertKeybindingInput,
@@ -1684,6 +1712,9 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
 
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
+  WsVoiceStatusRpc,
+  WsVoiceSetDeepgramKeyRpc,
+  WsVoiceTranscribeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,

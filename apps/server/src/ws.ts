@@ -240,6 +240,7 @@ import {
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
+import * as VoiceTranscriber from "./voice/VoiceTranscriber.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1144,6 +1145,8 @@ const makeWsRpcLayer = (
             );
       const usage = yield* UsageService.UsageService;
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
+      // Optional so harnesses that assemble the routes without it keep working.
+      const voiceTranscriber = yield* Effect.serviceOption(VoiceTranscriber.VoiceTranscriber);
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2017,6 +2020,30 @@ const makeWsRpcLayer = (
             "rpc.aggregate": "scheduledTasks",
             "scheduled_task.id": input.id,
           }),
+        [WS_METHODS.voiceStatus]: (_input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceStatus,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.status
+              : Effect.succeed({ deepgramKeySet: false }),
+            { "rpc.aggregate": "voice" },
+          ),
+        [WS_METHODS.voiceSetDeepgramKey]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceSetDeepgramKey,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.setDeepgramKey(input.apiKey)
+              : Effect.succeed({ deepgramKeySet: false }),
+            { "rpc.aggregate": "voice" },
+          ),
+        [WS_METHODS.voiceTranscribe]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.voiceTranscribe,
+            Option.isSome(voiceTranscriber)
+              ? voiceTranscriber.value.transcribe(input)
+              : Effect.succeed({ text: null, message: "Not available on this server." }),
+            { "rpc.aggregate": "voice" },
+          ),
         [WS_METHODS.serverProbe]: (_input) =>
           observeRpcEffect(WS_METHODS.serverProbe, Effect.succeed({}), {
             "rpc.aggregate": "server",

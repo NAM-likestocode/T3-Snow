@@ -165,6 +165,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server understands thread.pull-request.watch and wakes agents on pull request changes. */
   threadPullRequestWatch: Schema.optionalKey(Schema.Boolean),
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
+  /** T3-Snow: server exposes voice.status / voice.setDeepgramKey / voice.transcribe. */
+  voiceTranscription: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
       servers that must be relaunched manually (dev checkouts, Windows
       foreground runs, pre-update servers). */
