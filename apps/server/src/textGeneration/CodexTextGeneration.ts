@@ -460,8 +460,15 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         "--model",
         model,
         ...(reasoningEffort ? ["--config", `model_reasoning_effort="${reasoningEffort}"`] : []),
+        // Codex cannot drop its shell the way Claude drops tools, so a web page
+        // could steer a read-only shell into local files. Keep Codex seats off
+        // the web, and off the user's MCP servers and shell tool where honoured.
         "--config",
-        `web_search="${input.web ? "live" : "disabled"}"`,
+        'web_search="disabled"',
+        "--config",
+        "mcp_servers={}",
+        "--config",
+        "features.shell_tool=false",
         "--output-last-message",
         outputPath,
         "-",

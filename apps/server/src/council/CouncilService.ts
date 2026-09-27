@@ -32,6 +32,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
@@ -118,6 +119,8 @@ export const make = Effect.gen(function* () {
   const scope = yield* Effect.scope;
 
   const running = new Map<ThreadId, RunningCouncil>();
+  // Serializes the check-and-set in `start` so two starts can't both sit.
+  const startLock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<CouncilSnapshot>({ councils: [] });
   const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
   const nowMs = Clock.currentTimeMillis;
@@ -429,64 +432,66 @@ export const make = Effect.gen(function* () {
     });
 
   const start: CouncilService["Service"]["start"] = (threadId, args) =>
-    Effect.gen(function* () {
-      if (!textGeneration.runIsolatedPrompt) {
-        return { started: false, message: "Council is not available on this T3 Code server." };
-      }
-      if (running.has(threadId)) {
-        return { started: false, message: "A council is already sitting in this thread." };
-      }
-      const thread = yield* readShell(threadId);
-      if (!thread) return { started: false, message: "This thread is not available." };
-      const councilPlan = yield* plan(thread, args);
-      if ("info" in councilPlan) return { started: false, message: councilPlan.info };
+    startLock.withPermits(1)(
+      Effect.gen(function* () {
+        if (!textGeneration.runIsolatedPrompt) {
+          return { started: false, message: "Council is not available on this T3 Code server." };
+        }
+        if (running.has(threadId)) {
+          return { started: false, message: "A council is already sitting in this thread." };
+        }
+        const thread = yield* readShell(threadId);
+        if (!thread) return { started: false, message: "This thread is not available." };
+        const councilPlan = yield* plan(thread, args);
+        if ("info" in councilPlan) return { started: false, message: councilPlan.info };
 
-      const council: RunningCouncil = {
-        phase: "opening statements",
-        startedAt: yield* isoNow,
-        model: councilPlan.modelSummary,
-        seats: new Map(
-          SEAT_IDS.map((id) => {
-            const member = id === "chair" ? null : memberById(id);
-            return [
-              id,
-              {
+        const council: RunningCouncil = {
+          phase: "opening statements",
+          startedAt: yield* isoNow,
+          model: councilPlan.modelSummary,
+          seats: new Map(
+            SEAT_IDS.map((id) => {
+              const member = id === "chair" ? null : memberById(id);
+              return [
                 id,
-                icon: member?.icon ?? "⚖",
-                name: member?.short ?? "Chair",
-                status: "waiting",
-                detail: null,
-              } satisfies CouncilSeatProgress,
-            ];
-          }),
-        ),
-        fiber: null,
-      };
-      running.set(threadId, council);
-      yield* publish;
-      // Seats change inside provider callbacks; publish once a second while it sits.
-      const ticker = Effect.repeat(publish, Schedule.spaced("1 second"));
-      council.fiber = yield* Effect.forkIn(
-        Effect.raceFirst(convene(threadId, council, councilPlan), Effect.asVoid(ticker)).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("council: run failed", { cause })),
-          Effect.ensuring(
-            Effect.suspend(() => {
-              running.delete(threadId);
-              return publish;
+                {
+                  id,
+                  icon: member?.icon ?? "⚖",
+                  name: member?.short ?? "Chair",
+                  status: "waiting",
+                  detail: null,
+                } satisfies CouncilSeatProgress,
+              ];
             }),
           ),
-        ),
-        scope,
-      );
-      return { started: true };
-    });
+          fiber: null,
+        };
+        running.set(threadId, council);
+        yield* publish;
+        // Seats change inside provider callbacks; publish once a second while it sits.
+        const ticker = Effect.repeat(publish, Schedule.spaced("1 second"));
+        council.fiber = yield* Effect.forkIn(
+          Effect.raceFirst(convene(threadId, council, councilPlan), Effect.asVoid(ticker)).pipe(
+            Effect.catchCause((cause) => Effect.logWarning("council: run failed", { cause })),
+            Effect.ensuring(
+              Effect.suspend(() => {
+                if (running.get(threadId) === council) running.delete(threadId);
+                return publish;
+              }),
+            ),
+          ),
+          scope,
+        );
+        return { started: true };
+      }),
+    );
 
   const cancel: CouncilService["Service"]["cancel"] = (threadId) =>
     Effect.gen(function* () {
       const council = running.get(threadId);
       if (!council) return false;
       if (council.fiber) yield* Fiber.interrupt(council.fiber);
-      running.delete(threadId);
+      if (running.get(threadId) === council) running.delete(threadId);
       yield* publish;
       return true;
     });

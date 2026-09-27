@@ -8,6 +8,9 @@
  * question, then starts a turn of its own. One message goes out per idle
  * moment; the rest follow as each of those turns ends.
  *
+ * Waiting messages are mirrored to `<stateDir>/wake-queue.json` and reloaded
+ * at startup, so a restart never drops one that had not gone out yet.
+ *
  * @module wake/ThreadWakeQueue
  */
 import {
@@ -21,15 +24,27 @@ import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Schedule from "effect/Schedule";
+import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import * as ServerConfig from "../config.ts";
 import * as OrchestrationEngine from "../orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
 import { forkParked } from "../serverActivation.ts";
+
+const STATE_FILE_NAME = "wake-queue.json";
+const PersistedQueue = Schema.Record(
+  Schema.String,
+  Schema.Array(Schema.Struct({ text: Schema.String, source: Schema.String })),
+);
+const decodePersistedQueue = Schema.decodeUnknownEffect(Schema.fromJsonString(PersistedQueue));
+const encodePersistedQueue = Schema.encodeEffect(Schema.fromJsonString(PersistedQueue));
 
 /** A dispatched message that never produced a running session frees its slot after this. */
 const DELIVERY_STALL_MS = 2 * 60_000;
@@ -75,6 +90,10 @@ export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const crypto = yield* Crypto.Crypto;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const serverConfig = yield* ServerConfig.ServerConfig;
+  const statePath = path.join(serverConfig.stateDir, STATE_FILE_NAME);
 
   const pending = new Map<ThreadId, QueuedMessage[]>();
   const deliveries = new Map<ThreadId, Delivery>();
@@ -87,12 +106,25 @@ export const make = Effect.gen(function* () {
       Effect.orElseSucceed(() => undefined),
     );
 
+  const persist = Effect.suspend(() =>
+    (pending.size === 0
+      ? fileSystem.remove(statePath, { force: true })
+      : encodePersistedQueue(Object.fromEntries(pending)).pipe(
+          Effect.flatMap((json) => fileSystem.writeFileString(statePath, `${json}\n`)),
+        )
+    ).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logWarning("wake: could not save waiting messages", { cause }),
+      ),
+    ),
+  );
+
   const flush = (threadId: ThreadId): Effect.Effect<void> =>
     lock.withPermits(1)(
       Effect.gen(function* () {
         const queue = pending.get(threadId);
         if (!queue || queue.length === 0) {
-          pending.delete(threadId);
+          if (pending.delete(threadId)) yield* persist;
           return;
         }
         const now = yield* Clock.currentTimeMillis;
@@ -103,12 +135,14 @@ export const make = Effect.gen(function* () {
         const thread = yield* readThread(threadId);
         if (!thread || thread.archivedAt !== null) {
           pending.delete(threadId);
+          yield* persist;
           return;
         }
         if (isThreadBusy(thread)) return;
 
         const next = queue.shift()!;
         if (queue.length === 0) pending.delete(threadId);
+        yield* persist;
         const createdAt = new Date(now).toISOString();
         yield* engine
           .dispatch({
@@ -145,7 +179,7 @@ export const make = Effect.gen(function* () {
       const queue = pending.get(threadId) ?? [];
       queue.push({ text, source });
       pending.set(threadId, queue);
-      return flush(threadId);
+      return Effect.andThen(persist, flush(threadId));
     });
 
   const hasPending: ThreadWakeQueue["Service"]["hasPending"] = (threadId) =>
@@ -171,14 +205,24 @@ export const make = Effect.gen(function* () {
         return onSessionSet(event.payload.threadId, event.payload.session.status);
       case "thread.deleted":
       case "thread.archived":
-        return Effect.sync(() => {
-          pending.delete(event.payload.threadId);
+        return Effect.suspend(() => {
           deliveries.delete(event.payload.threadId);
+          return pending.delete(event.payload.threadId) ? persist : Effect.void;
         });
       default:
         return Effect.void;
     }
   };
+
+  // Messages still waiting when T3 Code stopped go out as their threads come free.
+  const saved = yield* fileSystem
+    .readFileString(statePath)
+    .pipe(Effect.flatMap(decodePersistedQueue), Effect.option);
+  if (Option.isSome(saved)) {
+    for (const [threadId, messages] of Object.entries(saved.value)) {
+      if (messages.length > 0) pending.set(threadId as ThreadId, [...messages]);
+    }
+  }
 
   const events = yield* engine.subscribeDomainEvents;
   yield* forkParked(Stream.runForEach(events, onEvent));

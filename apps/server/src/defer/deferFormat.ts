@@ -17,6 +17,13 @@ export const DEFER_MAX_CAPTURE_BYTES = 1024 * 1024;
 export const DEFER_MAX_TRIGGERS_PER_THREAD = 10;
 export const DEFER_MAX_TRIGGERS_TOTAL = 100;
 /** Exit code reported when a check or run command is killed for taking too long. */
+/** T3-Snow: the earliest a wake-up may fire, so a wake-up cannot re-arm itself in a tight loop. */
+export const DEFER_MIN_DELAY_MS = 30_000;
+/** T3-Snow: wake-ups one thread may fire per rolling hour before arming is refused. */
+export const DEFER_MAX_FIRES_PER_HOUR = 20;
+/** Exit code reported for a `run` skipped because the thread left Full access. */
+export const DEFER_NOT_RUN_EXIT_CODE = 126;
+
 export const DEFER_TIMED_OUT_EXIT_CODE = 124;
 
 const OUTPUT_MAX_LINES = 40;
@@ -150,7 +157,9 @@ export type DeferFireReason =
       readonly afterMs: number;
       readonly checks: number;
       readonly lastExit: number | null;
-    };
+    }
+  /** T3-Snow: the thread left Full access, so the check stopped running. */
+  | { readonly kind: "blocked"; readonly check: string };
 
 export function describeFireReason(reason: DeferFireReason): string {
   switch (reason.kind) {
@@ -162,6 +171,8 @@ export function describeFireReason(reason: DeferFireReason): string {
       return `gave up after ${formatCompactDuration(reason.afterMs)}, ${reason.checks} checks, last exit ${
         reason.lastExit ?? "–"
       }`;
+    case "blocked":
+      return `stopped checking \`${reason.check}\`: the thread is no longer in Full access mode`;
   }
 }
 

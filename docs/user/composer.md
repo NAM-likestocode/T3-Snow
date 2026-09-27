@@ -165,7 +165,8 @@ turn; it waits until the agent is done.
 
 Armed wake-ups appear above the composer with a countdown. A warning icon means
 the agent's check command itself is failing. Click × to cancel one. Wake-ups that
-run commands only work in **Full access** or **Auto** mode. They last until T3
+run commands only work in **Full access** mode, and stop if you switch the thread
+out of it. A thread gets at most 20 wake-ups an hour. Wake-ups last until T3
 Code restarts; after a restart, each one that never fired is reported to its
 thread so the agent can check on the work itself.
 
@@ -183,8 +184,9 @@ and has no wake-ups still pending.
 
 Autopilot does not change permissions or approve anything for you. In
 **Approval required** mode it stops at each approval prompt, so switch to **Auto** or
-**Full access** to let it run unattended. If T3 Code restarts while Autopilot is on,
-the banner shows it as paused; choose **Resume** or **Stop**.
+**Full access** to let it run unattended. Autopilot pauses itself after 100 turns or
+4 hours, and after T3 Code restarts; the banner then shows it as paused, so choose
+**Resume** or **Stop**.
 
 ## Council
 
@@ -204,6 +206,8 @@ one council can sit in a thread at a time.
 - `--quick` runs opening statements only; `--rounds 3` adds a second debate round.
 - `--no-web` keeps members off the web. With web research on, your idea text is
   sent to the model's search provider.
+  Members on Codex never search the web, since Codex can't be fully cut off from
+  your files.
 - `/council models` lists usable models; `/council help` shows all options.
 
 Members run on Claude or Codex models, with no access to your files or tools.

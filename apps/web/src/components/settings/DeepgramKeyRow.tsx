@@ -45,6 +45,14 @@ export function DeepgramKeyRow({ environmentId }: { environmentId: EnvironmentId
       return;
     }
     setKeySet(result.value.deepgramKeySet);
+    if (result.value.message) {
+      toastManager.add({
+        type: "error",
+        title: "Deepgram key not saved",
+        description: result.value.message,
+      });
+      return;
+    }
     setDraft("");
   };
 
