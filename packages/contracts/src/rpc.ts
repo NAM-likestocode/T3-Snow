@@ -131,6 +131,7 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
+import { DeferCancelInput, DeferCancelResult, DeferTriggersSnapshot } from "./defer.ts";
 import {
   VoiceSetDeepgramKeyInput,
   VoiceStatus,
@@ -538,11 +539,27 @@ export const WS_METHODS = {
   subscribeAuthAccess: "subscribeAuthAccess",
   subscribeBackgroundPolicy: "subscribeBackgroundPolicy",
   subscribeResourceTelemetry: "subscribeResourceTelemetry",
+  // T3-Snow deferred wake-ups
+  subscribeDeferTriggers: "subscribeDeferTriggers",
+  deferCancel: "defer.cancel",
   // T3-Snow cloud voice transcription
   voiceStatus: "voice.status",
   voiceSetDeepgramKey: "voice.setDeepgramKey",
   voiceTranscribe: "voice.transcribe",
 } as const;
+
+const WsSubscribeDeferTriggersRpc = Rpc.make(WS_METHODS.subscribeDeferTriggers, {
+  payload: Schema.Struct({}),
+  success: DeferTriggersSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsDeferCancelRpc = Rpc.make(WS_METHODS.deferCancel, {
+  payload: DeferCancelInput,
+  success: DeferCancelResult,
+  error: EnvironmentAuthorizationError,
+});
 
 const WsVoiceStatusRpc = Rpc.make(WS_METHODS.voiceStatus, {
   payload: Schema.Struct({}),
@@ -1712,6 +1729,8 @@ const WsSubscribeResourceTelemetryRpc = Rpc.make(WS_METHODS.subscribeResourceTel
 
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
+  WsSubscribeDeferTriggersRpc,
+  WsDeferCancelRpc,
   WsVoiceStatusRpc,
   WsVoiceSetDeepgramKeyRpc,
   WsVoiceTranscribeRpc,

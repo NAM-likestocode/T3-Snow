@@ -241,6 +241,7 @@ import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as VoiceTranscriber from "./voice/VoiceTranscriber.ts";
+import * as DeferService from "./defer/DeferService.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1147,6 +1148,7 @@ const makeWsRpcLayer = (
       const usageLimitSources = yield* UsageLimitSources.UsageLimitSources;
       // Optional so harnesses that assemble the routes without it keep working.
       const voiceTranscriber = yield* Effect.serviceOption(VoiceTranscriber.VoiceTranscriber);
+      const deferService = yield* Effect.serviceOption(DeferService.DeferService);
       const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
       const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
       const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
@@ -2020,6 +2022,23 @@ const makeWsRpcLayer = (
             "rpc.aggregate": "scheduledTasks",
             "scheduled_task.id": input.id,
           }),
+        [WS_METHODS.subscribeDeferTriggers]: (_input) =>
+          observeRpcStream(
+            WS_METHODS.subscribeDeferTriggers,
+            Option.isSome(deferService)
+              ? deferService.value.streamChanges
+              : Stream.make({ triggers: [] }),
+            { "rpc.aggregate": "defer" },
+          ),
+        [WS_METHODS.deferCancel]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.deferCancel,
+            (Option.isSome(deferService)
+              ? deferService.value.cancelById(input.triggerId)
+              : Effect.succeed(false)
+            ).pipe(Effect.map((cancelled) => ({ cancelled }))),
+            { "rpc.aggregate": "defer" },
+          ),
         [WS_METHODS.voiceStatus]: (_input) =>
           observeRpcEffect(
             WS_METHODS.voiceStatus,

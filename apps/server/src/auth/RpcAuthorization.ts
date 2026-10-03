@@ -147,6 +147,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.assetsPersistChatAttachments]: AuthOrchestrationOperateScope,
   [WS_METHODS.attachmentsCreateUploadUrl]: AuthOrchestrationOperateScope,
   [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
+  [WS_METHODS.subscribeDeferTriggers]: AuthOrchestrationReadScope,
+  [WS_METHODS.deferCancel]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceStatus]: AuthOrchestrationReadScope,
   [WS_METHODS.voiceSetDeepgramKey]: AuthOrchestrationOperateScope,
   [WS_METHODS.voiceTranscribe]: AuthOrchestrationOperateScope,

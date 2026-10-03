@@ -193,6 +193,21 @@ Voice** and paste your API key from [console.deepgram.com](https://console.deepg
 Your recording then goes to Deepgram through the computer running T3 Code, which keeps
 the key; devices connected to it use the same key. Deepgram bills your account.
 
+## Wake-ups
+
+Agents can schedule their own wake-ups instead of waiting in a loop: "check on
+this build in 10 minutes", "wake me when the tests finish", or a reminder you
+ask for. When a wake-up fires, it arrives in the thread as a new message and the
+agent carries on, even if you are not watching. It never interrupts a running
+turn; it waits until the agent is done.
+
+Armed wake-ups appear above the composer with a countdown. A warning icon means
+the agent's check command itself is failing. Click × to cancel one. Wake-ups that
+run commands only work in **Full access** mode, and stop if you switch the thread
+out of it. A thread gets at most 20 wake-ups an hour. Wake-ups last until T3
+Code restarts; after a restart, each one that never fired is reported to its
+thread so the agent can check on the work itself.
+
 ## Commands and skills
 
 Type `/` for commands or `$` to add a skill from the selected environment and
