@@ -1,5 +1,5 @@
 import type { ClientSettings } from "@t3tools/contracts/settings";
-import type { AssistantCitation } from "@t3tools/contracts";
+import type { AssistantCitation, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import {
   serializeAssistantCitation,
   withAssistantCitationComment,
@@ -9,8 +9,10 @@ import {
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
 
+import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
+
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "plan" | "default" | "autopilot" | "council";
+export type ComposerSlashCommand = "model" | "plan" | "default";
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {
@@ -24,24 +26,48 @@ export function formatAssistantCitationForComposer(citation: AssistantCitation, 
   return `${serializeAssistantCitation(withAssistantCitationComment(citation, comment))} `;
 }
 
-export function composerSubmissionIntentForEnter(input: {
+function composerRequiresModifier(
+  sendShortcut: ClientSettings["sendShortcut"] | undefined,
+  prompt: string,
+) {
+  return (
+    sendShortcut === "mod-enter" ||
+    (sendShortcut === "mod-enter-multiline" && /[\r\n]/.test(prompt))
+  );
+}
+
+export function composerSubmissionIntentForKey(input: {
+  event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
+  keybindings: ResolvedKeybindingsConfig;
+  platform?: string;
   isMobileViewport: boolean;
-  shiftKey: boolean;
-  modifierKey: boolean;
   isDraftThread: boolean;
   isRunning?: boolean;
   sendShortcut?: ClientSettings["sendShortcut"];
   prompt?: string;
 }): ComposerSubmissionIntent | null {
-  const requiresModifier =
-    input.sendShortcut === "mod-enter" ||
-    (input.sendShortcut === "mod-enter-multiline" && /[\r\n]/.test(input.prompt ?? ""));
-  if (input.isMobileViewport || (requiresModifier && !input.modifierKey)) return null;
-  if (input.shiftKey && !(requiresModifier && input.modifierKey && input.isRunning)) return null;
-  if (input.isRunning && input.modifierKey && (!requiresModifier || input.shiftKey)) {
-    return "alternate";
-  }
-  return input.modifierKey && input.isDraftThread ? "background" : "foreground";
+  const { event } = input;
+  if (input.isMobileViewport || event.isComposing || event.keyCode === 229 || event.repeat)
+    return null;
+  const command = resolveShortcutCommand(event, input.keybindings, {
+    ...(input.platform === undefined ? {} : { platform: input.platform }),
+    context: {
+      composerFocus: true,
+      draftThreadRoute: input.isDraftThread,
+      turnRunning: input.isRunning === true,
+    },
+  });
+  if (command === "composer.sendAlternate" && input.isRunning) return "alternate";
+  if (command === "composer.sendBackground" && input.isDraftThread) return "background";
+  if (command === "composer.sendAndNewThread" && !input.isDraftThread) return "background";
+  if (command !== null || event.key !== "Enter" || event.shiftKey || event.altKey) return null;
+  if (
+    composerRequiresModifier(input.sendShortcut, input.prompt ?? "") &&
+    !event.metaKey &&
+    !event.ctrlKey
+  )
+    return null;
+  return "foreground";
 }
 
 const isInlineTokenSegment = (segment: ComposerPromptSegment): boolean => segment.type !== "text";
@@ -277,21 +303,9 @@ export function composerStateAtPromptEnd(text: string): {
   };
 }
 
-/** T3-Snow: the arguments of a `/council …` message (empty when none), or null. */
-export function parseCouncilCommand(text: string): string | null {
-  const match = /^\/council(?:\s+([\s\S]*))?$/i.exec(text.trim());
-  return match ? (match[1] ?? "").trim() : null;
-}
-
-/** T3-Snow: the goal of an `/autopilot <goal>` message (empty when none), or null. */
-export function parseAutopilotCommand(text: string): string | null {
-  const match = /^\/autopilot(?:\s+([\s\S]*))?$/i.exec(text.trim());
-  return match ? (match[1] ?? "").trim() : null;
-}
-
 export function parseStandaloneComposerSlashCommand(
   text: string,
-): Exclude<ComposerSlashCommand, "model" | "autopilot" | "council"> | null {
+): Exclude<ComposerSlashCommand, "model"> | null {
   const match = /^\/(plan|default)\s*$/i.exec(text.trim());
   if (!match) {
     return null;

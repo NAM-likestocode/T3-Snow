@@ -15,31 +15,34 @@ import { shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 import { METRIC_OPTIONS, WINDOW_OPTIONS } from "../usage/usageShortcuts";
 
+// Every usage.* command needs a rank. An unranked one falls back to the
+// alphabetical compare, which makes the comparator inconsistent and the order
+// depend on the input order.
 const usageCommandOrder = new Map<KeybindingCommand, number>(
-  [...METRIC_OPTIONS, ...WINDOW_OPTIONS].map((option, index) => [option.command, index]),
+  [
+    "usage.open" as const,
+    ...[...METRIC_OPTIONS, ...WINDOW_OPTIONS].map((option) => option.command),
+  ].map((command, index) => [command, index]),
 );
 
+const firstUsageCommand = METRIC_OPTIONS[0].command;
+
 /**
- * Usage metric and period commands keep the page's order and sort as one block
- * at the start of their prefix; everything else sorts by `key`. A total order,
- * so adding a command never reshuffles unrelated rows.
+ * Orders commands by `key`, except Usage page commands, which sort as one
+ * block in page order where the first of them would sort. A total order, so
+ * adding a binding elsewhere cannot reshuffle the Usage rows.
  */
 function compareCommands(
   left: KeybindingCommand,
   right: KeybindingCommand,
   key: (command: KeybindingCommand) => string,
-  usagePrefix: string,
 ): number {
-  const leftIndex = usageCommandOrder.get(left);
-  const rightIndex = usageCommandOrder.get(right);
-  if (leftIndex !== undefined && rightIndex !== undefined) return leftIndex - rightIndex;
-  if (leftIndex === undefined && rightIndex === undefined) {
-    return key(left).localeCompare(key(right));
-  }
-  // One usage command against anything else: the block sits where its prefix does.
-  const otherKey = leftIndex === undefined ? key(left) : key(right);
-  const blockFirst = otherKey.startsWith(usagePrefix) || otherKey.localeCompare(usagePrefix) >= 0;
-  return (leftIndex === undefined) === blockFirst ? 1 : -1;
+  const leftRank = usageCommandOrder.get(left);
+  const rightRank = usageCommandOrder.get(right);
+  if (leftRank !== undefined && rightRank !== undefined) return leftRank - rightRank;
+  return key(leftRank === undefined ? left : firstUsageCommand).localeCompare(
+    key(rightRank === undefined ? right : firstUsageCommand),
+  );
 }
 
 export type KeybindingSource = "Default" | "Custom" | "Project";
@@ -232,12 +235,7 @@ export function buildKeybindingRows(
   });
 
   rowsWithConflicts.sort((left, right) => {
-    const commandCompare = compareCommands(
-      left.command,
-      right.command,
-      (command) => command,
-      "usage.",
-    );
+    const commandCompare = compareCommands(left.command, right.command, (command) => command);
     if (commandCompare !== 0) return commandCompare;
     return left.key.localeCompare(right.key);
   });
@@ -310,12 +308,15 @@ export function buildKeybindingCommandOptions(
   for (const binding of keybindings) {
     commands.add(binding.command);
   }
-  return [...commands].toSorted((left, right) =>
-    compareCommands(left, right, commandLabel, "Usage: "),
-  );
+  return [...commands].toSorted((left, right) => compareCommands(left, right, commandLabel));
 }
 
 export function commandLabel(command: KeybindingCommand): string {
+  if (command === "composer.sendAlternate") return "Composer: Opposite Queue or Steer Action";
+  if (command === "composer.sendBackground") return "Composer: Start in Background";
+  if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
+  if (command === "thread.steerQueuedMessage") return "Queue: Send First Queued Message as Steer";
+  if (command === "thread.editQueuedMessage") return "Queue: Edit Last Queued Message";
   if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread ID";
   const usageMetric = METRIC_OPTIONS.find((option) => option.command === command);
   if (usageMetric) return `Usage: ${usageMetric.label}`;
@@ -368,6 +369,7 @@ function normalizeShortcutKeyToken(key: string): string | null {
   return null;
 }
 
+/** Turns a keydown into a binding such as `mod+shift+k` or `tab`. Null for modifier-only presses. */
 export function keybindingFromKeyboardEvent(
   event: Pick<KeyboardEvent, "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">,
   platform: string,
@@ -385,9 +387,6 @@ export function keybindingFromKeyboardEvent(
   }
   if (event.altKey) parts.push("alt");
   if (event.shiftKey) parts.push("shift");
-  if (parts.length === 0) {
-    return null;
-  }
   parts.push(keyToken);
   return parts.join("+");
 }

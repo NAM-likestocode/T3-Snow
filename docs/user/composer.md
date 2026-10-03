@@ -34,20 +34,26 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-On web and desktop, a message sent during a running turn waits at the end of the conversation as a
-dashed bubble. It goes out on its own when the agent finishes its next tool
-call, or when the turn ends, even while you have another thread open. Use the arrow under the bubble to send it right
-away, or the X to move it back into the composer. Stop returns every queued
-message to the composer.
-
-In **Settings → General → Follow-up behavior**, choose **Queue** to keep this
-behavior or **Steer** to send new messages immediately. This setting applies to
-the current client. Messages already queued keep their place.
+On web and desktop, choose **Settings → General → Follow-up behavior** to queue
+new messages for a later turn or steer the running turn immediately. The setting
+applies to this client; already queued messages keep their place. Queued messages
+are saved on the server and can be edited, reordered, or removed above the composer.
+`Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the opposite action:
+it steers when your default is Queue and queues when your default is Steer.
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
-the oldest queued message now. Change `thread.steerQueuedMessage` in
-**Settings → Keybindings** to use another shortcut. It leaves the current draft
-in the composer and waits if the agent needs an approval or an answer.
+the oldest queued message as a steer. This leaves the current draft intact and
+requires an active turn that supports steering. Change
+`thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
+
+Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the
+start of the composer to edit the most recently queued message. Change
+`thread.editQueuedMessage` to use another shortcut.
+
+Mobile has the same choice under **Settings → Follow-ups**. While a turn is
+running the send button shows which action it will take. Long-press it to use the
+other action for a single message, or hold `Cmd` while sending from a hardware
+keyboard. The button only offers Steer when the running agent supports it.
 
 ## Queue messages offline on mobile
 
@@ -108,7 +114,8 @@ On web and desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
 leave workspace files as they are, or **Revert files too** to restore them as well.
 File restore is only offered for threads running in a worktree, and it is
-refused when another thread or agent session also uses that directory, since
+refused when another thread or agent session also uses that directory, a folder
+inside it, or a folder that contains it, since
 restoring would erase their changes. A thread that works in the project directory
 rewinds the conversation only. The selected prompt and its attachments return to the composer for editing and
 resending. Any unsent draft stays above the restored prompt.
@@ -143,74 +150,29 @@ awake; it can sleep normally once recording stops.
 Transcription runs on your device. T3 Code deletes the temporary audio after
 transcription or cancellation; only the message text is sent when you submit.
 
-## System chat
+## Queued messages
 
-Ask about the computer itself without picking a project: "why is my disk full?",
-"install ffmpeg", "what's using port 3000?". Open **System chat** with
-`mod+shift+u`, from the command palette, or from the project picker in a new
-thread's heading. The agent works from an empty folder (`~/.t3/system-chat`) and
-reaches the rest of your machine through the access mode you choose, so use
-**Full access** when you want it to change things.
+On web and desktop, the composer shows **Interrupt** while the agent is working and the draft is
+empty. Adding text or attachments replaces it with a steer arrow. Click it to send a message into
+the active turn, or press `Enter` on desktop. Hold `Cmd` on macOS or `Ctrl` on Windows and Linux to
+switch the button to a queue icon. Click while holding that key, or press `Cmd+Enter` or
+`Ctrl+Enter` on desktop, to queue the message for after the active turn.
 
-System chat appears in the sidebar as **System**, one per machine. Delete it like
-any project; opening System chat again brings it back.
+Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
+the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
+to a steer, or remove it.
 
-## Wake-ups
+If the server restarts, saved queued messages keep their order and are held. Press
+**Resume** in an empty composer on web or desktop, or **Resume queue** in the queue
+sheet on mobile, to continue. You can edit, reorder, or remove held messages without starting them.
 
-Agents can schedule their own wake-ups instead of waiting in a loop: "check on
-this build in 10 minutes", "wake me when the tests finish", or a reminder you
-ask for. When a wake-up fires, it arrives in the thread as a new message and the
-agent carries on, even if you are not watching. It never interrupts a running
-turn; it waits until the agent is done.
-
-Armed wake-ups appear above the composer with a countdown. A warning icon means
-the agent's check command itself is failing. Click × to cancel one. Wake-ups that
-run commands only work in **Full access** mode, and stop if you switch the thread
-out of it. A thread gets at most 20 wake-ups an hour. Wake-ups last until T3
-Code restarts; after a restart, each one that never fired is reported to its
-thread so the agent can check on the work itself.
-
-## Autopilot
-
-Send `/autopilot <end goal>` in a thread and the agent works on that goal on its
-own until it is done and checked, then gives one short report. It doesn't stop to
-ask you questions: T3 Code answers them for it with "infer a reasonable decision
-and continue". Autopilot works the same with every provider.
-
-Autopilot starts only when the thread is idle with nothing queued, so send a first
-message in a new thread before using it. While it is on, a banner above the composer
-shows the goal and a **Stop** button. It turns itself off once the agent is finished
-and has no wake-ups still pending.
-
-Autopilot does not change permissions or approve anything for you. In
-**Approval required** mode it stops at each approval prompt, so switch to **Auto** or
-**Full access** to let it run unattended. Autopilot pauses itself after 100 turns or
-4 hours, and after T3 Code restarts; the banner then shows it as paused, so choose
-**Resume** or **Stop**.
-
-## Council
-
-Send `/council <idea>` to put an idea in front of four advisors: an Optimist, a
-Skeptic, a CFO, and an Operator. They answer on their own, then argue with each
-other, and a Chair decides whether the idea is smart. The report arrives in the
-thread with the Chair's verdict first and the full debate below it, and the
-thread's agent can answer follow-up questions about it.
-
-T3 Code shows what the council will cost and asks before it starts. While it sits,
-a panel above the composer shows each member's progress; **Cancel** stops it. Only
-one council can sit in a thread at a time.
-
-- `/council opus5max <idea>` runs every seat on one model and effort (also
-  `opus5:xhigh`). Without a model, seats use the models in **Settings → General →
-  Council**, or the thread's model.
-- `--quick` runs opening statements only; `--rounds 3` adds a second debate round.
-- `--no-web` keeps members off the web. With web research on, your idea text is
-  sent to the model's search provider.
-  Members on Codex never search the web, since Codex can't be fully cut off from
-  your files.
-- `/council models` lists usable models; `/council help` shows all options.
-
-Members run on Claude or Codex models, with no access to your files or tools.
+The pencil on a queued row opens that message in the composer for editing. The original message
+stays in the queue until you save, and its row is highlighted while you edit. The message's
+attachments appear above the text with a remove control, and new images can be added the usual way.
+The checkmark saves the queued message in place; **Cancel** on its row leaves it unchanged. Whatever
+you had typed in the composer before starting the edit is restored afterwards. If the queued
+message starts or is removed while you are editing, the edit ends: changed content moves into the
+composer when it is empty, and is discarded otherwise.
 
 ## Voice dictation on web and desktop
 
@@ -240,6 +202,10 @@ provider. On mobile, both are also available before starting a thread on
 The slash menu also includes skills unless you turn off **Settings → General →
 Show skills in slash menu**. Only skills enabled for the provider are listed.
 
+After you add or change skills, plugins, or MCP servers, use **Restart agent
+session** in the command palette on web and desktop. The conversation continues,
+and your next message starts the agent again with the new setup.
+
 Provider commands must start the message to run. T3 Code commands such as
 `/model` and `/plan`, and skill mentions, work on any line.
 
@@ -262,6 +228,13 @@ pull requests in the current project's repository. Continue typing digits to fil
 by any part of its pull request numbers. A complete number is also resolved directly, even when that
 pull request is older than the recent list. Type a single word after `#` to search pull requests in
 the repository by text. Choose a result to insert it as a chip.
+
+Another thread can be context too. Type `@` followed by part of its title to pick one from
+the same server, or on web and desktop drag a thread out of the sidebar and drop it on the
+composer; a multi-selection drops together. The chip shows the thread's current title and
+opens it when selected. Your prompt only carries a reference: the agent reads the thread's
+history on demand, so attaching a long thread costs nothing until the agent looks. Attaching a
+thread does not change it, and the agent cannot send messages to it unless you ask.
 
 Images keep their thumbnail shelf above the text and also get a chip at your cursor, so you can
 say exactly which image you mean. Deleting an image chip leaves the image on the shelf; removing

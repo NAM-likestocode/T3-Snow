@@ -1,7 +1,12 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ChatAttachment, ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type {
+  BranchNamingOptions,
+  ChatAttachment,
+  ModelSelection,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -48,6 +53,7 @@ export interface PrContentGenerationResult {
 }
 
 export interface BranchNameGenerationInput {
+  naming?: BranchNamingOptions | undefined;
   cwd: string;
   message: string;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
@@ -73,26 +79,6 @@ export interface ThreadTitleGenerationInput {
 export interface ThreadTitleGenerationResult {
   title: string;
   needsRefinement?: boolean | undefined;
-}
-
-/**
- * T3-Snow: one isolated model run with its own system prompt and no project
- * context, files, shell, or MCP tools; only web search and fetch when `web`.
- * Used by Council members.
- */
-export interface IsolatedPromptInput {
-  readonly modelSelection: ModelSelection;
-  readonly systemPrompt: string;
-  readonly prompt: string;
-  readonly web: boolean;
-  readonly timeoutMs: number;
-  /** Called with each web search query as the model makes it. */
-  readonly onSearch?: ((query: string) => void) | undefined;
-}
-
-export interface IsolatedPromptResult {
-  readonly text: string;
-  readonly searches: number;
 }
 
 /**
@@ -126,11 +112,6 @@ export class TextGeneration extends Context.Service<
     readonly generateThreadTitle: (
       input: ThreadTitleGenerationInput,
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
-
-    /** T3-Snow: an isolated run; absent on providers that cannot offer one yet. */
-    readonly runIsolatedPrompt?: (
-      input: IsolatedPromptInput,
-    ) => Effect.Effect<IsolatedPromptResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
 
@@ -138,8 +119,7 @@ type TextGenerationOp =
   | "generateCommitMessage"
   | "generatePrContent"
   | "generateBranchName"
-  | "generateThreadTitle"
-  | "runIsolatedPrompt";
+  | "generateThreadTitle";
 
 const resolveInstance = (
   registry: ProviderInstanceRegistry.ProviderInstanceRegistry["Service"],
@@ -190,19 +170,6 @@ export const make = Effect.gen(function* () {
               ));
             return yield* textGeneration.generateThreadTitle({ ...input, linkedContext });
           }),
-        ),
-      ),
-    runIsolatedPrompt: (input) =>
-      resolveInstance(registry, "runIsolatedPrompt", input.modelSelection.instanceId).pipe(
-        Effect.flatMap((textGeneration) =>
-          textGeneration.runIsolatedPrompt
-            ? textGeneration.runIsolatedPrompt(input)
-            : Effect.fail(
-                new TextGenerationError({
-                  operation: "runIsolatedPrompt",
-                  detail: `${input.modelSelection.instanceId} cannot run isolated prompts yet; use a Claude or Codex model.`,
-                }),
-              ),
         ),
       ),
   });

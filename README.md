@@ -9,14 +9,6 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
   (`Cmd+Shift+Space` on macOS). Whisper runs on your machine: no API key, no cost.
   See **Settings → Voice**. Press `Enter` while dictating to transcribe and send.
   Prefer the cloud? Pick **Deepgram** there and paste your own API key.
-- **Wake-ups:** agents can schedule check-ins ("wake me when the build is done")
-  with the built-in `defer` tool; armed ones show above the composer.
-- **Autopilot:** send `/autopilot <goal>` and the agent works on it alone until it
-  is done and verified, answering its own questions, then turns itself off.
-- **Council:** send `/council <idea>` and four advisors (on any mix of Claude and GPT
-  models) debate it; a chair gives the verdict.
-- **System chat:** press `Ctrl+Shift+U` (or pick **System chat** in the command
-  palette) to ask about your computer without choosing a project.
 
 ### Maintaining the fork
 
@@ -128,6 +120,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 - [Permission modes](./docs/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)
 - [Project settings](./docs/user/project-settings.md)
+- [Appearance preferences](./docs/user/appearance.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
 - [Keeping app and server in sync](./docs/user/updating.md)
 - [Source control integrations](./docs/user/source-control.md)

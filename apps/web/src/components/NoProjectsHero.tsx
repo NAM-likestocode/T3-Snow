@@ -1,9 +1,10 @@
-import { MonitorIcon, PlusIcon } from "lucide-react";
+import { MessageSquareDashedIcon, PlusIcon } from "lucide-react";
 import { useCallback } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
 import { isElectron } from "../env";
-import { useOpenSystemChat } from "../hooks/useOpenSystemChat";
+import { useScratchProject } from "../hooks/useScratchProject";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
@@ -11,7 +12,9 @@ import { WorkspacePageHeader } from "./WorkspacePageHeader";
 
 export function NoProjectsHero() {
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
-  const openSystemChat = useOpenSystemChat();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const scratchTargetEnvironmentId = scratchEnvironmentId(primaryEnvironmentId);
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
@@ -23,17 +26,25 @@ export function NoProjectsHero() {
             <EmptyHeader className="max-w-none">
               <EmptyTitle>What should we work on?</EmptyTitle>
               <EmptyDescription>
-                Add a project to start your first thread, or ask about this computer.
+                {scratchTargetEnvironmentId === null
+                  ? "Add a project to start your first thread."
+                  : "Add a project, or start without one."}
               </EmptyDescription>
               <div className="mt-6 flex justify-center gap-2">
                 <Button size="sm" onClick={openAddProject}>
                   <PlusIcon className="size-4" />
                   Add project
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => void openSystemChat()}>
-                  <MonitorIcon className="size-4" />
-                  System chat
-                </Button>
+                {scratchTargetEnvironmentId === null ? null : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void startScratchThread(scratchTargetEnvironmentId)}
+                  >
+                    <MessageSquareDashedIcon className="size-4" />
+                    Start without a project
+                  </Button>
+                )}
               </div>
             </EmptyHeader>
           </div>

@@ -2,6 +2,7 @@ import {
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
+  isProviderTextGenerationCapable,
   type ModelSelection,
   type ProjectId,
   type ProjectScopedServerSettingKey,
@@ -94,7 +95,9 @@ export function resolveSourceControlWriterModelSelection(
   }
 
   const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
-  return provider?.enabled === true && isProviderAvailable(provider)
+  return provider?.enabled === true &&
+    isProviderAvailable(provider) &&
+    isProviderTextGenerationCapable(provider)
     ? selection
     : settings.textGenerationModelSelection;
 }
@@ -393,15 +396,6 @@ export function applyServerSettingsPatch(
       : {}),
     ...(patch.sourceControlWriterModelSelection !== undefined
       ? { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }
-      : {}),
-    // T3-Snow: council seat models replace whole, like the selections above.
-    ...(patch.council?.models !== undefined
-      ? {
-          council: {
-            ...next.council,
-            models: { ...current.council.models, ...patch.council.models },
-          },
-        }
       : {}),
     ...(automaticGitFetchInterval !== undefined ? { automaticGitFetchInterval } : {}),
     ...(providerHealthRefreshInterval !== undefined ? { providerHealthRefreshInterval } : {}),

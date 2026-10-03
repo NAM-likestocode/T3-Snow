@@ -41,21 +41,6 @@ describe("serverSettings helpers", () => {
       logsAfterDays: 30,
     });
   });
-  it("replaces council model choices whole, keeping other council fields", () => {
-    const codex = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-6-astra" };
-    const withRounds = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      council: {
-        rounds: 3,
-        models: { skeptic: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection },
-      },
-    });
-    const council = applyServerSettingsPatch(withRounds, {
-      council: { models: { skeptic: codex, cfo: codex } },
-    }).council;
-    expect(council.rounds).toBe(3);
-    expect(council.models).toMatchObject({ optimist: null, skeptic: codex, cfo: codex });
-    expect(council.models.skeptic).not.toHaveProperty("options");
-  });
   it("replaces SSH host lists when saving, editing, and removing hosts", () => {
     const host = { id: "mini", label: "Mac mini", target: "mini" };
     const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
@@ -476,6 +461,41 @@ describe("serverSettings helpers", () => {
     } satisfies ServerProvider;
 
     expect(resolveSourceControlWriterModelSelection(settings, [unavailableProvider])).toBe(
+      settings.textGenerationModelSelection,
+    );
+    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
+  });
+
+  it("falls back from a writer provider that cannot generate application text", () => {
+    const instanceId = ProviderInstanceId.make("acp_writer");
+    const sourceControlWriterModelSelection = createModelSelection(instanceId, "default");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: {
+          driver: ProviderDriverKind.make("acpRegistry"),
+          enabled: true,
+          config: {},
+        },
+      },
+      sourceControlWriterModelSelection,
+    };
+    const incapableProvider = {
+      instanceId,
+      driver: ProviderDriverKind.make("acpRegistry"),
+      supportsTextGeneration: false,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-07-27T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    } satisfies ServerProvider;
+
+    expect(resolveSourceControlWriterModelSelection(settings, [incapableProvider])).toBe(
       settings.textGenerationModelSelection,
     );
     expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
