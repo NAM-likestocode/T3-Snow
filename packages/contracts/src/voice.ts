@@ -20,6 +20,8 @@ export type VoiceEngine = typeof VoiceEngine.Type;
 
 export const VoiceStatus = Schema.Struct({
   deepgramKeySet: Schema.Boolean,
+  /** Set when saving or removing the key failed. */
+  message: Schema.optional(Schema.String),
 });
 export type VoiceStatus = typeof VoiceStatus.Type;
 
