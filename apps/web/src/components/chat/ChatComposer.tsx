@@ -6108,8 +6108,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     if (voiceSendRequest === lastVoiceSendRequestRef.current) return;
     lastVoiceSendRequestRef.current = voiceSendRequest;
-    submitComposer(undefined, "foreground");
-  }, [submitComposer, voiceSendRequest]);
+    submitComposer(
+      undefined,
+      resolveComposerDispatchMode({
+        running: phase === "running",
+        alternateModifier: false,
+        activeTurnDefault: settings.followUpBehavior,
+      }),
+    );
+  }, [phase, settings.followUpBehavior, submitComposer, voiceSendRequest]);
   const voiceShortcutLabel = shortcutLabelForCommand(keybindings, "composer.voice", {
     context: { terminalFocus: false, terminalOpen, modelPickerOpen: false },
   });
