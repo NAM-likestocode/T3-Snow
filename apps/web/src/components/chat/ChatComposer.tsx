@@ -144,6 +144,7 @@ import {
 } from "./composerContextUndo";
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
+import { ComposerDeferBanner } from "./ComposerDeferBanner";
 import { ComposerSurface } from "./ComposerSurface";
 import {
   ComposerBannerStack,
@@ -6805,6 +6806,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               />
             </ComposerBanner.Attachment>
           ) : null}
+          <ComposerDeferBanner environmentId={environmentId} threadId={activeThreadId} />
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge

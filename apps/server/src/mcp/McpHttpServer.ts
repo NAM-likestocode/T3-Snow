@@ -49,6 +49,8 @@ import { WorktreeToolkit } from "./toolkits/worktree/tools.ts";
 import * as WorktreeMcpService from "./WorktreeMcpService.ts";
 import { PullRequestsToolkitHandlersLive } from "./toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "./toolkits/pullRequests/tools.ts";
+import { DeferToolkitHandlersLive } from "./toolkits/defer/handlers.ts";
+import { DeferToolkit } from "./toolkits/defer/tools.ts";
 import {
   DeviceScreenshotToolkitHandlersLive,
   DeviceStandardToolkitHandlersLive,
@@ -695,6 +697,11 @@ export const PullRequestsToolkitRegistrationLive = McpServer.toolkit(PullRequest
   Layer.provide(PullRequestsToolkitHandlersLive),
 );
 
+/** T3-Snow: deferred wake-ups (`defer`). */
+export const DeferToolkitRegistrationLive = McpServer.toolkit(DeferToolkit).pipe(
+  Layer.provide(DeferToolkitHandlersLive),
+);
+
 const DeviceStandardToolkitRegistrationLive = McpServer.toolkit(DeviceStandardToolkit).pipe(
   Layer.provide(DeviceStandardToolkitHandlersLive),
 );
@@ -725,5 +732,6 @@ export const layer = Layer.mergeAll(
   PreviewControlsRegistrationLive,
   WorktreeToolkitRegistrationLive,
   PullRequestsToolkitRegistrationLive,
+  DeferToolkitRegistrationLive,
   DeviceToolkitRegistrationLive,
 ).pipe(Layer.provideMerge(McpTransportLive));
