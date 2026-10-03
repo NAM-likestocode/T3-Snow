@@ -208,6 +208,24 @@ out of it. A thread gets at most 20 wake-ups an hour. Wake-ups last until T3
 Code restarts; after a restart, each one that never fired is reported to its
 thread so the agent can check on the work itself.
 
+## Autopilot
+
+Send `/autopilot <end goal>` in a thread and the agent works on that goal on its
+own until it is done and checked, then gives one short report. It doesn't stop to
+ask you questions: T3 Code answers them for it with "infer a reasonable decision
+and continue". Autopilot works the same with every provider.
+
+Autopilot starts only when the thread is idle with nothing queued, so send a first
+message in a new thread before using it. While it is on, a banner above the composer
+shows the goal and a **Stop** button. It turns itself off once the agent is finished
+and has no wake-ups still pending.
+
+Autopilot does not change permissions or approve anything for you. In
+**Approval required** mode it stops at each approval prompt, so switch to **Auto** or
+**Full access** to let it run unattended. Autopilot pauses itself after 100 turns or
+4 hours, and after T3 Code restarts; the banner then shows it as paused, so choose
+**Resume** or **Stop**.
+
 ## Commands and skills
 
 Type `/` for commands or `$` to add a skill from the selected environment and

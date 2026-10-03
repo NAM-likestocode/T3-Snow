@@ -1,6 +1,6 @@
 # T3-Snow
 
-A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictation and agent wake-ups.
+A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictation, agent wake-ups, and Autopilot.
 
 - **Download:** grab the Windows `.exe` or Linux `.AppImage` from
   [Releases](https://github.com/NAM-likestocode/T3-Snow/releases). Installed apps
@@ -11,6 +11,8 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
   Prefer the cloud? Pick **Deepgram** there and paste your own API key.
 - **Wake-ups:** agents can schedule check-ins ("wake me when the build is done")
   with the built-in `defer` tool; armed ones show above the composer.
+- **Autopilot:** send `/autopilot <goal>` and the agent works on it alone until it
+  is done and verified, answering its own questions, then turns itself off.
 
 ### Maintaining the fork
 

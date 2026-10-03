@@ -131,6 +131,13 @@ import {
   ReviewDiffPreviewResult,
 } from "./review.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
+import {
+  AutopilotSnapshot,
+  AutopilotStartInput,
+  AutopilotStartResult,
+  AutopilotThreadInput,
+  AutopilotThreadResult,
+} from "./autopilot.ts";
 import { DeferCancelInput, DeferCancelResult, DeferTriggersSnapshot } from "./defer.ts";
 import {
   VoiceSetDeepgramKeyInput,
@@ -542,6 +549,11 @@ export const WS_METHODS = {
   // T3-Snow deferred wake-ups
   subscribeDeferTriggers: "subscribeDeferTriggers",
   deferCancel: "defer.cancel",
+  // T3-Snow Autopilot
+  subscribeAutopilot: "subscribeAutopilot",
+  autopilotStart: "autopilot.start",
+  autopilotStop: "autopilot.stop",
+  autopilotResume: "autopilot.resume",
   // T3-Snow cloud voice transcription
   voiceStatus: "voice.status",
   voiceSetDeepgramKey: "voice.setDeepgramKey",
@@ -558,6 +570,31 @@ const WsSubscribeDeferTriggersRpc = Rpc.make(WS_METHODS.subscribeDeferTriggers, 
 const WsDeferCancelRpc = Rpc.make(WS_METHODS.deferCancel, {
   payload: DeferCancelInput,
   success: DeferCancelResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsSubscribeAutopilotRpc = Rpc.make(WS_METHODS.subscribeAutopilot, {
+  payload: Schema.Struct({}),
+  success: AutopilotSnapshot,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsAutopilotStartRpc = Rpc.make(WS_METHODS.autopilotStart, {
+  payload: AutopilotStartInput,
+  success: AutopilotStartResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAutopilotStopRpc = Rpc.make(WS_METHODS.autopilotStop, {
+  payload: AutopilotThreadInput,
+  success: AutopilotThreadResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsAutopilotResumeRpc = Rpc.make(WS_METHODS.autopilotResume, {
+  payload: AutopilotThreadInput,
+  success: AutopilotThreadResult,
   error: EnvironmentAuthorizationError,
 });
 
@@ -1731,6 +1768,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsSubscribeDeferTriggersRpc,
   WsDeferCancelRpc,
+  WsSubscribeAutopilotRpc,
+  WsAutopilotStartRpc,
+  WsAutopilotStopRpc,
+  WsAutopilotResumeRpc,
   WsVoiceStatusRpc,
   WsVoiceSetDeepgramKeyRpc,
   WsVoiceTranscribeRpc,

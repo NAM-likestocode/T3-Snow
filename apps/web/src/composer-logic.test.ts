@@ -22,6 +22,7 @@ import {
   expandCollapsedComposerCursor,
   formatAssistantCitationForComposer,
   isCollapsedCursorAdjacentToInlineToken,
+  parseAutopilotCommand,
   parseStandaloneComposerSlashCommand,
   replaceTextRange,
 } from "./composer-logic";
@@ -801,6 +802,17 @@ describe("isCollapsedCursorAdjacentToInlineToken", () => {
 
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenEnd, "left")).toBe(true);
     expect(isCollapsedCursorAdjacentToInlineToken(text, tokenStart, "right")).toBe(true);
+  });
+});
+
+describe("parseAutopilotCommand", () => {
+  it("returns the goal, empty for a bare command, and null for other text", () => {
+    expect(parseAutopilotCommand("/autopilot  Add dark mode\nwith tests ")).toBe(
+      "Add dark mode\nwith tests",
+    );
+    expect(parseAutopilotCommand(" /Autopilot ")).toBe("");
+    expect(parseAutopilotCommand("/autopilots go")).toBeNull();
+    expect(parseAutopilotCommand("please /autopilot go")).toBeNull();
   });
 });
 

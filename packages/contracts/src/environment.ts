@@ -167,6 +167,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes subscribeDeferTriggers / defer.cancel and the defer MCP tool. */
   deferTriggers: Schema.optionalKey(Schema.Boolean),
+  /** T3-Snow: server exposes subscribeAutopilot / autopilot.start|stop|resume. */
+  autopilot: Schema.optionalKey(Schema.Boolean),
   /** T3-Snow: server exposes voice.status / voice.setDeepgramKey / voice.transcribe. */
   voiceTranscription: Schema.optionalKey(Schema.Boolean),
   /** The update path clients should offer for this server. Absent on
