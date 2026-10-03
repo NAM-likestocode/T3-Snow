@@ -179,7 +179,9 @@ composer when it is empty, and is discarded otherwise.
 Click the microphone next to the attach button, or press `mod+shift+space`, and
 start talking. Press it again (or click stop) to transcribe; the text is inserted
 at your cursor for you to review before sending. Press `Enter` instead to
-transcribe and send in one step. `Esc` discards the recording.
+transcribe and send in one step. `Esc` discards the recording. When the agent
+asks a question, dictation types your answer; a question that only takes one of
+its listed options copies the text to your clipboard instead.
 
 Whisper runs on your device, so dictation is free and private. The first time you
 dictate, the model downloads once (about 80 MB for the default) and is cached;
