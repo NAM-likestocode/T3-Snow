@@ -118,6 +118,8 @@ import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as VoiceTranscriber from "./voice/VoiceTranscriber.ts";
 import * as DeferService from "./defer/DeferService.ts";
+import * as AutopilotService from "./autopilot/AutopilotService.ts";
+import * as ThreadTurnPreamble from "./wake/ThreadTurnPreamble.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import {
   connectHttpApiLayer,
@@ -541,9 +543,12 @@ const RuntimeCoreDependenciesBaseLive = Layer.mergeAll(
   ReplayMarkers.layer,
   // T3-Snow: agents' own wake-ups (the `defer` MCP tool and the composer banner).
   DeferService.layer,
+  AutopilotService.layer,
 ).pipe(
   // Core Services
   Layer.provideMerge(OrchestrationApplicationLayerLive),
+  // T3-Snow: one instance for Autopilot and the run service that applies it to turns.
+  Layer.provideMerge(ThreadTurnPreamble.layer),
   Layer.provideMerge(OrchestrationEventInfrastructureLayerLive),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(ServerSettingsLayerLive),

@@ -53,6 +53,7 @@ import {
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as RunExecutionService from "./RunExecutionService.ts";
+import * as ThreadTurnPreamble from "../wake/ThreadTurnPreamble.ts";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 
 const driver = ProviderDriverKind.make("codex");
@@ -4014,5 +4015,68 @@ it.effect("releases ingestion after idle subagent rows and items settle", () =>
       "turn_item:idle",
       "root-finalized",
     ]);
+  }),
+);
+
+it.effect("sends the thread's standing preamble before the provider's copy of the message", () =>
+  Effect.gen(function* () {
+    const sentTexts = yield* Ref.make<ReadonlyArray<string>>([]);
+    const threadId = ThreadId.make("thread:run-execution-preamble");
+    const runId = RunId.make("run:run-execution-preamble");
+    const attemptId = RunAttemptId.make("attempt:run-execution-preamble");
+    const providerInstanceId = ProviderInstanceId.make("codex");
+    const testLayer = RunExecutionTestLayer.pipe(Layer.provideMerge(ThreadTurnPreamble.layer));
+
+    yield* Effect.gen(function* () {
+      const preamble = yield* ThreadTurnPreamble.ThreadTurnPreamble;
+      yield* preamble.setStanding(threadId, "autopilot", "## Autopilot mode");
+      const runExecution = yield* RunExecutionService.RunExecutionServiceV2;
+      yield* runExecution.startRootRun({
+        commandId: CommandId.make("command:run-execution-preamble"),
+        appThread: { id: threadId } as OrchestrationV2AppThread,
+        providerSessionId: ProviderSessionId.make("session:run-execution-preamble"),
+        session: {
+          events: Stream.never,
+          startTurn: (input: { readonly message: { readonly text: string } }) =>
+            Ref.update(sentTexts, (texts) => [...texts, input.message.text]),
+        } as unknown as ProviderAdapterV2SessionRuntime,
+        run: { id: runId, threadId, ordinal: 1, providerInstanceId } as OrchestrationV2Run,
+        rootNode: {
+          id: NodeId.make("node:run-execution-preamble"),
+        } as OrchestrationV2ExecutionNode,
+        checkpointScope: {
+          id: CheckpointScopeId.make("checkpoint-scope:run-execution-preamble"),
+        } as OrchestrationV2CheckpointScope,
+        providerThread: {
+          id: ProviderThreadId.make("provider-thread:run-execution-preamble"),
+          driver,
+        } as OrchestrationV2ProviderThread,
+        attempt: { id: attemptId, providerTurnId: null } as OrchestrationV2RunAttempt,
+        attemptId,
+        providerTurnOrdinal: 1,
+        shouldStartProviderTurn: () => Effect.succeed(true),
+        message: {
+          messageId: MessageId.make("message:run-execution-preamble"),
+          text: "Add dark mode.",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+        modelSelection: { instanceId: providerInstanceId, model: "gpt-5.4" },
+        runtimePolicy: {
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          cwd: process.cwd(),
+          approvalPolicy: "never",
+          sandboxPolicy: {
+            type: "readOnly",
+            access: { type: "fullAccess" },
+            networkAccess: false,
+          },
+        },
+      });
+    }).pipe(Effect.provide(testLayer));
+
+    assert.deepEqual(yield* Ref.get(sentTexts), ["## Autopilot mode\n\n---\n\nAdd dark mode."]);
   }),
 );

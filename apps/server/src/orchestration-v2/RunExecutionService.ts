@@ -24,6 +24,8 @@ import {
   type ThreadId,
   type TurnItemId,
 } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as ThreadTurnPreamble from "../wake/ThreadTurnPreamble.ts";
 import * as Context from "effect/Context";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -552,6 +554,8 @@ export const layer: Layer.Layer<
     const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
+    // T3-Snow: hidden per-thread text (Autopilot) placed before the provider's copy of the message.
+    const turnPreamble = yield* Effect.serviceOption(ThreadTurnPreamble.ThreadTurnPreamble);
 
     const writeFinalRunEvents = (input: {
       readonly run: OrchestrationV2Run;
@@ -1356,7 +1360,12 @@ export const layer: Layer.Layer<
             attemptId: input.attemptId,
             rootNodeId: input.rootNode.id,
             providerThread: input.providerThread,
-            message: input.message,
+            message: Option.isSome(turnPreamble)
+              ? {
+                  ...input.message,
+                  text: yield* turnPreamble.value.apply(input.run.threadId, input.message.text),
+                }
+              : input.message,
             modelSelection: input.modelSelection,
             runtimePolicy: input.runtimePolicy,
           };

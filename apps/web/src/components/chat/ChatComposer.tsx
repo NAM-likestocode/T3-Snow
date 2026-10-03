@@ -145,6 +145,8 @@ import {
 import type { ThreadSyncPhase } from "../../threadSync";
 import { ComposerBanner } from "./ComposerBanner";
 import { ComposerDeferBanner } from "./ComposerDeferBanner";
+import { ComposerAutopilotBanner } from "./ComposerAutopilotBanner";
+import { useAutopilotSupported } from "~/state/autopilot";
 import { ComposerSurface } from "./ComposerSurface";
 import {
   ComposerBannerStack,
@@ -2571,6 +2573,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }),
   );
 
+  const autopilotSupported = useAutopilotSupported(environmentId);
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
     if (!composerTrigger) return [];
     if (composerTrigger.kind === "path") {
@@ -2617,6 +2620,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 command: "default",
                 label: "/default",
                 description: "Switch this thread back to normal build mode",
+              },
+            ] as const)
+          : []),
+        // T3-Snow: runs on the environment, so only where it supports it; the goal follows.
+        ...(autopilotSupported && composerTrigger.rangeStart === 0
+          ? ([
+              {
+                id: "slash:autopilot",
+                type: "slash-command",
+                command: "autopilot",
+                label: "/autopilot",
+                description: "Autonomously execute an end goal: /autopilot <goal>",
               },
             ] as const)
           : []),
@@ -2724,6 +2739,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return [];
   }, [
     activeThreadId,
+    autopilotSupported,
     compactSlashCommandAvailable,
     composerTrigger,
     environmentId,
@@ -3904,6 +3920,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             setComposerHighlightedItemId(null);
             setIsComposerModelPickerOpen(true);
           }
+          return;
+        }
+        if (item.command === "autopilot") {
+          const replacement = "/autopilot ";
+          const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
+            snapshot.value,
+            trigger.rangeEnd,
+            replacement,
+          );
+          const applied = applyPromptReplacement(
+            trigger.rangeStart,
+            replacementRangeEnd,
+            replacement,
+            { expectedText: snapshot.value.slice(trigger.rangeStart, replacementRangeEnd) },
+          );
+          if (applied) setComposerHighlightedItemId(null);
           return;
         }
         if (!planModeUiEnabled) return;
@@ -6807,6 +6839,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </ComposerBanner.Attachment>
           ) : null}
           <ComposerDeferBanner environmentId={environmentId} threadId={activeThreadId} />
+          <ComposerAutopilotBanner environmentId={environmentId} threadId={activeThreadId} />
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge
