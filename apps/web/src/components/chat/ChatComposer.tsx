@@ -6044,13 +6044,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ensureLeadingBoundary?: boolean;
         citationCommentAnchor?: AssistantCitationSourceAnchor;
         clipboardData?: DataTransfer;
+        /** Let the text become the open question's typed answer, as typing would. */
+        allowQuestionAnswer?: boolean;
       },
     ): boolean => {
       if (
         text.length === 0 ||
         isConnecting ||
         isComposerApprovalState ||
-        pendingUserInputs.length > 0 ||
+        (pendingUserInputs.length > 0 && !options?.allowQuestionAnswer) ||
         projectSelectionRequired ||
         (options?.citationCommentAnchor && !composerEditorRef.current)
       ) {
@@ -6115,15 +6117,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const voiceDictation = useVoiceDictation({
     environmentId,
     onTranscript: (text, { send }) => {
-      if (insertComposerText(text, "cursor", { ensureLeadingBoundary: true })) {
+      if (
+        insertComposerText(text, "cursor", {
+          ensureLeadingBoundary: true,
+          allowQuestionAnswer: true,
+        })
+      ) {
         if (send) setVoiceSendRequest((request) => request + 1);
         return;
       }
       void navigator.clipboard?.writeText(text).catch(() => undefined);
+      const optionsOnly =
+        activePendingUserInput !== null &&
+        activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
       toastManager.add({
         type: "info",
         title: "Dictation copied to clipboard",
-        description: "The composer can't take text right now. Paste it when it's ready.",
+        description: optionsOnly
+          ? "This question only takes one of its listed options."
+          : "The composer can't take text right now. Paste it when it's ready.",
       });
     },
     onError: (message) => {
