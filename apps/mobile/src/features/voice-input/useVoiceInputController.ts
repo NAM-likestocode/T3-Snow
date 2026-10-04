@@ -14,7 +14,18 @@ import { AppState } from "react-native";
 import { useSharedValue } from "react-native-reanimated";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
+import { useAtomValue } from "@effect/atom-react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentId } from "@t3tools/contracts";
+import { AsyncResult } from "effect/unstable/reactivity";
+
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
+import { createServerVoiceTranscriber } from "../../native/serverVoiceTranscriber";
+import { useEnvironmentServerConfig } from "../../state/entities";
+import { mobilePreferencesAtom } from "../../state/preferences";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { voiceEnvironment } from "../../state/voice";
+import { resolveVoiceEngine } from "./voiceEngine";
 import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";
 import {
   VoiceInputController,
@@ -64,6 +75,8 @@ async function configureVoiceRecordingAudio(): Promise<void> {
 
 export function useVoiceInputController(input: {
   readonly ownerKey: string | null;
+  /** The environment that transcribes when the Deepgram engine is used. */
+  readonly environmentId?: EnvironmentId | null;
   readonly draftMessage: string;
   readonly selection: ComposerEditorSelection;
   readonly disabled?: boolean;
@@ -90,6 +103,44 @@ export function useVoiceInputController(input: {
   const latestInputRef = useRef(input);
   latestInputRef.current = input;
 
+  // T3-Snow: dictation can also transcribe on the connected server with its Deepgram key.
+  const environmentId = input.environmentId ?? null;
+  const serverConfig = useEnvironmentServerConfig(environmentId);
+  const preferencesResult = useAtomValue(mobilePreferencesAtom);
+  const transcribeOnServer = useAtomCommand(voiceEnvironment.transcribe, {
+    reportFailure: false,
+  });
+  const engine = resolveVoiceEngine({
+    preference: AsyncResult.isSuccess(preferencesResult)
+      ? preferencesResult.value.voiceEngine
+      : undefined,
+    deviceAvailable: getLocalVoiceTranscriber() !== null,
+    deepgramAvailable:
+      environmentId !== null && serverConfig?.environment.capabilities.voiceTranscription === true,
+  });
+  const transcriberSourceRef = useRef({ engine, environmentId, transcribeOnServer });
+  transcriberSourceRef.current = { engine, environmentId, transcribeOnServer };
+  const getTranscriber = useCallback(() => {
+    const source = transcriberSourceRef.current;
+    if (source.engine === "deepgram" && source.environmentId !== null) {
+      const targetEnvironmentId = source.environmentId;
+      return createServerVoiceTranscriber(async (request) => {
+        const result = await source.transcribeOnServer({
+          environmentId: targetEnvironmentId,
+          input: request,
+        });
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
+          throw new Error(
+            error instanceof Error && error.message ? error.message : "Transcription failed.",
+          );
+        }
+        return result.value;
+      });
+    }
+    return source.engine === "device" ? getLocalVoiceTranscriber() : null;
+  }, []);
+
   const handleRecorderStatus = useCallback((status: RecordingStatus) => {
     controllerRef.current?.handleRecorderStatus({
       isFinished: status.isFinished,
@@ -103,7 +154,7 @@ export function useVoiceInputController(input: {
   if (!controllerRef.current) {
     controllerRef.current = new VoiceInputController({
       recorder,
-      getTranscriber: getLocalVoiceTranscriber,
+      getTranscriber,
       requestPermission: async () => {
         const permission = await requestRecordingPermissionsAsync();
         return { granted: permission.granted, canAskAgain: permission.canAskAgain };
@@ -221,7 +272,7 @@ export function useVoiceInputController(input: {
   return {
     // Store screenshots show the dictation button even on simulators, whose
     // on-device transcription is unavailable.
-    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,
+    isAvailable: engine !== null || getNativeShowcaseScene() !== null,
     state,
     audioLevels,
     elapsedSeconds,

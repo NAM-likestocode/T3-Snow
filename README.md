@@ -5,6 +5,10 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
 - **Download:** grab the Windows `.exe` or Linux `.AppImage` from
   [Releases](https://github.com/NAM-likestocode/T3-Snow/releases). Installed apps
   update themselves when a new release is published.
+- **Android:** install the `.apk` from the same release. For one-tap updates, add
+  this repository's URL in [Obtainium](https://obtainium.imranr.dev). The app is
+  called T3-Snow and installs beside the official T3 Code app. Under Settings →
+  Dictation you can transcribe with the Deepgram key saved on your T3-Snow server.
 - **Voice:** click the mic in the composer or press `Ctrl+Shift+Space`
   (`Cmd+Shift+Space` on macOS). Whisper runs on your machine: no API key, no cost.
   See **Settings → Voice**. Press `Enter` while dictating to transcribe and send.
@@ -19,6 +23,10 @@ A fork of [T3 Code](https://github.com/pingdotgg/t3code) with local voice dictat
 - **Ship a release:** Actions → **Release** → Run workflow. It builds Windows and
   Linux and publishes a GitHub release. The version is automatic (`1.<run>.0`),
   or push a tag like `v1.2.0`.
+- **Android signing:** add a repository secret named `ANDROID_SIGNING_PASSWORD`
+  (any long password). The first release creates the signing key and keeps it,
+  encrypted with that password, on the `android-signing` branch. Keep both: an
+  APK signed with another key cannot update the installed app.
 - **Get upstream updates:** Actions → **Sync upstream** → Run workflow
   and opens a pull request merging the latest official T3 Code. It needs a
   repository secret named `SYNC_TOKEN`: a personal access token with the `repo`
