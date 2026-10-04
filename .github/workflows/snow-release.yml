@@ -150,9 +150,21 @@ jobs:
           path: release-publish/*
           if-no-files-found: error
 
+  android:
+    name: Android
+    needs: version
+    uses: ./.github/workflows/snow-android.yml
+    permissions:
+      contents: write
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
   publish:
     name: Publish release
-    needs: [version, build]
+    needs: [version, build, android]
+    # A failed Android build leaves the release desktop-only instead of blocking it.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -164,6 +176,13 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Download Android build
+        if: needs.android.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: release-android
+          path: release-assets
+
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v3
         with:
@@ -172,8 +191,10 @@ jobs:
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           make_latest: true
-          fail_on_unmatched_files: true
+          # The APK is missing when its build failed; the desktop builds are required above.
+          fail_on_unmatched_files: false
           files: |
+            release-assets/*.apk
             release-assets/*.AppImage
             release-assets/*.exe
             release-assets/*.blockmap
@@ -183,5 +204,6 @@ jobs:
 
             - **Windows:** the `.exe` below. Run it to install.
             - **Linux:** the `.AppImage` below. Make it executable (`chmod +x`) and run it.
+            - **Android:** the `.apk` below. For one-tap updates, add this repository to [Obtainium](https://obtainium.imranr.dev).
 
             Already installed? The app offers this update by itself.

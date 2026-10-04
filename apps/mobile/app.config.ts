@@ -110,6 +110,10 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+// T3-Snow: the fork's own Android build (snow-mobile-release.yml) installs beside the official app.
+const snowAppName = repoEnv.T3SNOW_APP_NAME?.trim() || undefined;
+const snowAndroidPackage = repoEnv.T3SNOW_ANDROID_PACKAGE?.trim() || undefined;
+const snowAndroidVersionCode = Number(repoEnv.T3SNOW_ANDROID_VERSION_CODE);
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -225,11 +229,11 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // family names without waiting for runtime font loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
+  name: snowAppName ?? variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: "2.0.0",
+  version: repoEnv.T3SNOW_APP_VERSION?.trim() || "2.0.0",
   runtimeVersion: {
     // Development manifests resolve on every launch, so avoid fingerprint's
     // expensive native-project calculation there. Preview and production stay
@@ -290,7 +294,10 @@ const config: ExpoConfig = {
   },
   android: {
     icon: variant.assets.appIcon,
-    package: variant.androidPackage,
+    package: snowAndroidPackage ?? variant.androidPackage,
+    ...(Number.isInteger(snowAndroidVersionCode) && snowAndroidVersionCode > 0
+      ? { versionCode: snowAndroidVersionCode }
+      : {}),
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -373,7 +380,8 @@ const config: ExpoConfig = {
       "expo-audio",
       {
         microphonePermission: "Allow T3 Code to use your microphone for voice input.",
-        recordAudioAndroid: false,
+        // T3-Snow: Android dictation records here and transcribes with the server's Deepgram key.
+        recordAudioAndroid: true,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
       },

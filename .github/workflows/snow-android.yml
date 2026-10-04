@@ -1,0 +1,167 @@
+name: Android app
+
+# T3-Snow's own Android app, installed beside the official T3 Code app.
+#
+# The Release workflow calls this to attach a signed APK to each release; it
+# also runs on pull requests that touch the mobile app, to prove it still
+# builds. Install Obtainium on the phone and point it at this repository to
+# get every new APK with one tap.
+#
+# Signing needs one repository secret, ANDROID_SIGNING_PASSWORD (any long
+# password). The first signed build creates the key, encrypts it with that
+# password, and keeps the encrypted copy on the `android-signing` branch so
+# every later build signs with the same key. Android refuses updates signed
+# with a different key, so do not delete that branch or change the password.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version, such as 1.2.3."
+        required: true
+        type: string
+    secrets:
+      ANDROID_SIGNING_PASSWORD:
+        required: false
+  pull_request:
+    paths:
+      - "apps/mobile/**"
+      - "packages/client-runtime/src/voice-input/**"
+      - ".github/workflows/snow-android.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    if: github.repository != 'pingdotgg/t3code'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      # The first signed build stores the encrypted signing key on its own branch.
+      contents: write
+    env:
+      SIGN: ${{ github.event_name != 'pull_request' }}
+      VERSION: ${{ inputs.version || '0.0.1' }}
+      APP_VARIANT: production
+      T3CODE_MOBILE_UPDATES_ENABLED: "0"
+      T3SNOW_APP_NAME: T3-Snow
+      T3SNOW_ANDROID_PACKAGE: com.t3snow.app
+      EXPO_NO_GIT_STATUS: "1"
+      NODE_OPTIONS: --max-old-space-size=6144
+    steps:
+      - name: Check signing password
+        if: env.SIGN == 'true'
+        env:
+          PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        run: |
+          if [[ -z "$PASSWORD" ]]; then
+            echo "::error::Add a repository secret named ANDROID_SIGNING_PASSWORD (Settings → Secrets and variables → Actions → New repository secret) to build the Android app."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=@t3tools/mobile...
+              - --filter=@t3tools/scripts...
+
+      - name: Expose pnpm
+        run: |
+          pnpm_version="$(node --print "require('./package.json').packageManager.split('@').pop()")"
+          vp_pnpm_bin="$HOME/.vite-plus/package_manager/pnpm/$pnpm_version/pnpm/bin"
+          echo "$vp_pnpm_bin" >> "$GITHUB_PATH"
+          "$vp_pnpm_bin/pnpm" --version
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle cache
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Resolve version code
+        run: |
+          set -euo pipefail
+          IFS=. read -r major minor patch <<< "$VERSION"
+          # Android only installs an update with a higher version code.
+          echo "T3SNOW_APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "T3SNOW_ANDROID_VERSION_CODE=$(( major * 1000000 + minor * 1000 + patch ))" >> "$GITHUB_ENV"
+
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --clean --platform android
+
+      - name: Build APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
+
+      - name: Load or create signing key
+        if: env.SIGN == 'true'
+        env:
+          PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          keystore="$RUNNER_TEMP/release.keystore"
+          encrypted="$RUNNER_TEMP/release.keystore.enc"
+          if git fetch --quiet --depth=1 origin refs/heads/android-signing; then
+            git show FETCH_HEAD:release.keystore.enc > "$encrypted"
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 \
+              -in "$encrypted" -out "$keystore" -pass env:PASSWORD
+          else
+            keytool -genkeypair -keystore "$keystore" -storetype PKCS12 -alias t3snow \
+              -keyalg RSA -keysize 4096 -validity 36500 -dname "CN=T3-Snow" \
+              -storepass:env PASSWORD -keypass:env PASSWORD
+            openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt \
+              -in "$keystore" -out "$encrypted" -pass env:PASSWORD
+            # A branch of its own, so the key outlives every build and release.
+            blob="$(git hash-object -w "$encrypted")"
+            tree="$(printf '100644 blob %s\trelease.keystore.enc\n' "$blob" | git mktree)"
+            commit="$(git commit-tree "$tree" -m "Encrypted Android signing key for T3-Snow")"
+            git push --quiet origin "$commit:refs/heads/android-signing"
+          fi
+          echo "KEYSTORE=$keystore" >> "$GITHUB_ENV"
+
+      - name: Sign APK
+        env:
+          PASSWORD: ${{ secrets.ANDROID_SIGNING_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-publish
+          unsigned=apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          output="release-publish/T3-Snow-$VERSION-android.apk"
+          if [[ "$SIGN" != "true" ]]; then
+            cp "$unsigned" "$output"
+            exit 0
+          fi
+          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$build_tools/apksigner" sign --ks "$KEYSTORE" --ks-key-alias t3snow \
+            --ks-pass env:PASSWORD --key-pass env:PASSWORD --out "$output" "$unsigned"
+          "$build_tools/apksigner" verify "$output"
+          rm -f "$KEYSTORE"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-android
+          path: release-publish/*.apk
+          if-no-files-found: error
