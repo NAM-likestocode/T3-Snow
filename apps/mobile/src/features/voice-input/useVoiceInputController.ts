@@ -102,6 +102,8 @@ export function useVoiceInputController(input: {
   }
   const latestInputRef = useRef(input);
   latestInputRef.current = input;
+  // Android reports `background` while its microphone permission dialog is open.
+  const permissionPromptOpenRef = useRef(false);
 
   // T3-Snow: dictation can also transcribe on the connected server with its Deepgram key.
   const environmentId = input.environmentId ?? null;
@@ -156,8 +158,13 @@ export function useVoiceInputController(input: {
       recorder,
       getTranscriber,
       requestPermission: async () => {
-        const permission = await requestRecordingPermissionsAsync();
-        return { granted: permission.granted, canAskAgain: permission.canAskAgain };
+        permissionPromptOpenRef.current = true;
+        try {
+          const permission = await requestRecordingPermissionsAsync();
+          return { granted: permission.granted, canAskAgain: permission.canAskAgain };
+        } finally {
+          permissionPromptOpenRef.current = false;
+        }
       },
       configureRecording: configureVoiceRecordingAudio,
       releaseRecording: releaseVoiceRecordingAudio,
@@ -200,10 +207,12 @@ export function useVoiceInputController(input: {
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
-      // iOS reports `inactive` while its permission dialog is open. Only the
-      // real background state cancels preparation; recorder status handles
-      // calls and route interruptions during capture.
-      if (nextState === "background") controller.appMovedToBackground();
+      // iOS reports `inactive` and Android `background` while the permission
+      // dialog is open. Only a real background state cancels preparation;
+      // recorder status handles calls and route interruptions during capture.
+      if (nextState === "background" && !permissionPromptOpenRef.current) {
+        controller.appMovedToBackground();
+      }
     });
     return () => subscription.remove();
   }, [controller]);
