@@ -3,16 +3,17 @@ import * as Option from "effect/Option";
 
 import * as DeferService from "../../../defer/DeferService.ts";
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
+import * as McpToolAccess from "../../McpToolAccess.ts";
 import { DeferToolkit } from "./tools.ts";
 
 const make = Effect.gen(function* () {
   // Optional so route harnesses that omit the service still build; calls then fail plainly.
   const deferOption = yield* Effect.serviceOption(DeferService.DeferService);
 
-  return DeferToolkit.of({
-    defer: (input) =>
+  return {
+    // A wake-up belongs to the calling thread, so only an agent running inside one may arm it.
+    defer: McpToolAccess.actsAsCaller((input) =>
       Effect.gen(function* () {
-        // Every agent may schedule its own wake-ups; the credential already names the thread.
         const scope = yield* McpInvocationContext.McpInvocationContext;
         if (!scope.thread) {
           return yield* new DeferService.DeferRequestError({
@@ -43,7 +44,8 @@ const make = Effect.gen(function* () {
             return yield* defer.cancel(threadId, input.id ?? "");
         }
       }),
-  });
+    ),
+  } satisfies McpToolAccess.Handlers<typeof DeferToolkit.tools>;
 });
 
-export const DeferToolkitHandlersLive = DeferToolkit.toLayer(make);
+export const layer = McpToolAccess.toLayer(DeferToolkit, make);
