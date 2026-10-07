@@ -1,11 +1,16 @@
-import { McpCapabilityUnavailableError } from "@t3tools/contracts";
+import { McpCapabilityUnavailableError, OrchestratorMcpFailure } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as DeferService from "../../../defer/DeferService.ts";
+import * as ThreadManagementService from "../../../orchestration-v2/ThreadManagementService.ts";
 
-const dependencies = [McpInvocationContext.McpInvocationContext];
+const dependencies = [
+  McpInvocationContext.McpInvocationContext,
+  ThreadManagementService.ThreadManagementService,
+];
 
 /** Parameters and descriptions match the Pi `defer` tool so existing prompts carry over. */
 export const DeferToolInput = Schema.Struct({
@@ -36,6 +41,7 @@ export type DeferToolInput = typeof DeferToolInput.Type;
 
 export const DeferToolError = Schema.Union([
   McpCapabilityUnavailableError,
+  OrchestratorMcpFailure,
   DeferService.DeferRequestError,
 ]);
 

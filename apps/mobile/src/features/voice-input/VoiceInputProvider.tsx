@@ -25,7 +25,7 @@ import { useSharedValue } from "react-native-reanimated";
 import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";
 import { createServerVoiceTranscriber } from "../../native/serverVoiceTranscriber";
