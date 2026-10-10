@@ -38,20 +38,18 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as CheckpointService from "./CheckpointService.ts";
 import * as EventSink from "./EventSink.ts";
-import * as IdAllocator from "./IdAllocator.ts";
-import type {
-  ProviderAdapterV2Event,
-  ProviderAdapterV2RuntimePolicy,
-  ProviderAdapterV2SessionRuntime,
-  ProviderAdapterV2TurnMessage,
-} from "./ProviderAdapter.ts";
-import { ProviderAdapterTurnStartError } from "./ProviderAdapter.ts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import type { ProjectionStoreV2Error } from "./ProjectionStore.ts";
-import { makeProviderFailure, makeProviderFailureTurnItem } from "./ProviderFailure.ts";
+import {
+  makeProviderFailure,
+  makeProviderFailureTurnItem,
+} from "@t3tools/provider-core/server/failure";
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 
 export interface ProviderEventRoutingState {
@@ -77,7 +75,10 @@ export interface InheritedBackgroundTurnItemRoute {
   readonly runId: OrchestrationV2Run["id"];
 }
 
-type ProviderTerminalEvent = Extract<ProviderAdapterV2Event, { readonly type: "turn.terminal" }>;
+type ProviderTerminalEvent = Extract<
+  ProviderAdapter.ProviderAdapterV2Event,
+  { readonly type: "turn.terminal" }
+>;
 
 function isTerminalProviderTurnStatus(status: OrchestrationV2ProviderTurn["status"]): boolean {
   return (
@@ -349,7 +350,7 @@ export function makeProviderEventRoutingState(input: {
 }
 
 export function routeProviderEvent(
-  event: ProviderAdapterV2Event,
+  event: ProviderAdapter.ProviderAdapterV2Event,
   input: ProviderEventRouteIdentity,
   state: ProviderEventRoutingState,
 ): readonly [boolean, ProviderEventRoutingState] {
@@ -501,7 +502,7 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly commandId: CommandId;
   readonly appThread: OrchestrationV2AppThread;
   readonly providerSessionId: ProviderSessionId;
-  readonly session: ProviderAdapterV2SessionRuntime;
+  readonly session: ProviderAdapter.ProviderAdapterV2SessionRuntime;
   readonly run: OrchestrationV2Run;
   readonly rootNode: OrchestrationV2ExecutionNode;
   readonly checkpointScope: OrchestrationV2CheckpointScope;
@@ -519,9 +520,9 @@ export interface RunExecutionServiceV2StartRootRunInput {
   readonly shouldStartProviderTurn?: () => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly shouldFinalizeRun?: () => Effect.Effect<boolean, ProjectionStoreV2Error>;
   readonly hasUnpairedRunInterruptRequest?: () => Effect.Effect<boolean, never>;
-  readonly message: ProviderAdapterV2TurnMessage;
+  readonly message: ProviderAdapter.ProviderAdapterV2TurnMessage;
   readonly modelSelection: ModelSelection;
-  readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
+  readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
 }
 
 export interface RunExecutionServiceV2Shape {
@@ -546,6 +547,7 @@ export const layer: Layer.Layer<
   | IdAllocator.IdAllocatorV2
   | ProviderEventIngestor.ProviderEventIngestorV2
   | ServerSettings.ServerSettingsService
+  | McpAppModelContext.McpAppModelContext
 > = Layer.effect(
   RunExecutionServiceV2,
   Effect.gen(function* () {
@@ -554,6 +556,7 @@ export const layer: Layer.Layer<
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
     const finalizationObserver = yield* RunFinalizationService.RunFinalizationObserver;
     // T3-Snow: hidden per-thread text (Autopilot) placed before the provider's copy of the message.
     const turnPreamble = yield* Effect.serviceOption(ThreadTurnPreamble.ThreadTurnPreamble);
@@ -736,7 +739,6 @@ export const layer: Layer.Layer<
                     providerInstanceId: input.run.providerInstanceId,
                     occurredAt: completedAt,
                     payload: makeProviderFailureTurnItem({
-                      idAllocator,
                       driver: input.terminal.driver,
                       threadId: input.run.threadId,
                       runId: input.run.id,
@@ -1004,7 +1006,10 @@ export const layer: Layer.Layer<
               }
               yield* Ref.set(rootRunFinalized, true);
             });
-          const trackChildLifecycle = (event: ProviderAdapterV2Event, deliverable: boolean) =>
+          const trackChildLifecycle = (
+            event: ProviderAdapter.ProviderAdapterV2Event,
+            deliverable: boolean,
+          ) =>
             Effect.gen(function* () {
               const routing = yield* Ref.get(eventRouting);
               if (event.type === "provider_turn.updated") {
@@ -1356,6 +1361,23 @@ export const layer: Layer.Layer<
           // its already-issued MCP credential valid even when the agent goes
           // a long time between browser-tool calls.
           yield* McpSessionRegistry.touchActiveMcpThread(input.run.threadId);
+          // A context read that fails costs the agent the apps' notes for
+          // this turn, not the turn itself.
+          const appContext = (yield* mcpAppModelContext
+            .forThread(input.run.threadId)
+            .pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Failed to read MCP app model context.", { cause }).pipe(
+                  Effect.as([]),
+                ),
+              ),
+            )).map((entry) => ({
+            // The item id alone is unique and needs no escaping; server and
+            // tool names are free text that would break the tag Codex wraps
+            // the context in.
+            key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
+            text: entry.text,
+          }));
           const turnInput = {
             appThread: input.appThread,
             threadId: input.run.threadId,
@@ -1381,6 +1403,7 @@ export const layer: Layer.Layer<
               : input.message,
             modelSelection: input.modelSelection,
             runtimePolicy: input.runtimePolicy,
+            ...(appContext.length === 0 ? {} : { appContext }),
           };
           const compact =
             input.message.attachments.length === 0 &&
@@ -1388,7 +1411,7 @@ export const layer: Layer.Layer<
           const startTurn = compact
             ? (input.session.compactThread?.(turnInput) ??
               Effect.fail(
-                new ProviderAdapterTurnStartError({
+                new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: input.session.driver,
                   threadId: input.run.threadId,
                   providerThreadId: input.providerThread.id,
@@ -1456,7 +1479,7 @@ export const layer: Layer.Layer<
 );
 
 export function makeInterruptResultTurnItem(input: {
-  readonly idAllocator: IdAllocator.IdAllocatorV2Shape;
+  readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
   readonly run: OrchestrationV2Run;
   readonly rootNode: OrchestrationV2ExecutionNode;
   readonly providerThread: OrchestrationV2ProviderThread;

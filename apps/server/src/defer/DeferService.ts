@@ -28,7 +28,7 @@ import {
   type OrchestrationV2ThreadShell,
   type ThreadId,
 } from "@t3tools/contracts";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -269,8 +269,8 @@ export const make = Effect.gen(function* () {
 
   const shell = yield* Effect.cached(
     Effect.gen(function* () {
-      const platform = yield* HostProcessPlatform;
-      const env = yield* HostProcessEnvironment;
+      const platform = yield* HostProcess.Platform;
+      const env = yield* HostProcess.Environment;
       if (platform === "win32") {
         const candidates = [
           env.ProgramFiles,

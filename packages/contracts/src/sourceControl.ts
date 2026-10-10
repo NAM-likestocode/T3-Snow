@@ -8,6 +8,7 @@ export const SourceControlProviderKind = Schema.Literals([
   "forgejo",
   "azure-devops",
   "bitbucket",
+  "gitcafe",
   "unknown",
 ]);
 export type SourceControlProviderKind = typeof SourceControlProviderKind.Type;
@@ -29,6 +30,8 @@ export const ChangeRequest = Schema.Struct({
   url: Schema.String,
   baseRefName: TrimmedNonEmptyString,
   headRefName: TrimmedNonEmptyString,
+  /** The head commit, when the provider's read includes it. */
+  headSha: Schema.optional(TrimmedNonEmptyString),
   state: ChangeRequestState,
   /** Present when the provider can tell that an open change request is still a draft. */
   isDraft: Schema.optional(Schema.Boolean),
