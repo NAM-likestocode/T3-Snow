@@ -3,6 +3,7 @@ import {
   EnvironmentAuthorizationError,
   EnvironmentId,
   ProjectId,
+  ProviderInstanceId,
   type ServerSettings,
 } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -157,6 +158,7 @@ describe("scoped settings writes", () => {
           mode: "custom",
           rules: {
             worktreeAfterDays: 12,
+            worktreeSettledAfterDays: null,
             worktreeOnDelete: true,
             worktreeOnMerge: true,
             worktreeUnchanged: false,
@@ -181,6 +183,7 @@ describe("scoped settings writes", () => {
     expect(policies).toEqual([
       {
         worktreeAfterDays: 12,
+        worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
         worktreeOnMerge: true,
         worktreeUnchanged: false,
@@ -188,6 +191,7 @@ describe("scoped settings writes", () => {
       },
       {
         worktreeAfterDays: null,
+        worktreeSettledAfterDays: null,
         worktreeOnDelete: false,
         worktreeOnMerge: false,
         worktreeUnchanged: false,
@@ -229,6 +233,88 @@ describe("scoped settings writes", () => {
     expect(persistClient).not.toHaveBeenCalled();
   });
 
+  describe("an environment that saves but drops keys it does not know", () => {
+    const upgradedLaptop = (saved: Partial<ServerSettings>) =>
+      vi.fn(async ({ environmentId }: { environmentId: EnvironmentId }) => ({
+        _tag: "Success" as const,
+        value: {
+          ...DEFAULT_SERVER_SETTINGS,
+          ...(environmentId === laptop.environmentId ? saved : {}),
+        },
+      }));
+    const outcome = async (
+      plan: ReturnType<typeof planScopedSettingsPatch>,
+      persistServer: ReturnType<typeof upgradedLaptop>,
+    ) => {
+      const result = await persistScopedSettingsPatch(plan, persistServer, vi.fn());
+      return {
+        saved: result.savedEnvironments.map(({ label }) => label),
+        failed: result.failedEnvironments.map(({ label, message }) => ({ label, message })),
+      };
+    };
+    const unsupported = [
+      {
+        label: server.label,
+        message: "This environment does not support this setting. Update T3 Code on it.",
+      },
+    ];
+
+    it("reports a dropped toggle", async () => {
+      expect(
+        await outcome(
+          planScopedSettingsPatch(all, environments, { reviewGuidesEnabled: true }),
+          upgradedLaptop({ reviewGuidesEnabled: true }),
+        ),
+      ).toEqual({ saved: [laptop.label], failed: unsupported });
+    });
+
+    it("reports dropped text but accepts the server trimming it", async () => {
+      expect(
+        await outcome(
+          planScopedSettingsPatch(all, environments, { reviewGuideInstructions: " Read tests " }),
+          upgradedLaptop({ reviewGuideInstructions: "Read tests" }),
+        ),
+      ).toEqual({ saved: [laptop.label], failed: unsupported });
+    });
+
+    it("reports a dropped key inside a project override", async () => {
+      expect(
+        await outcome(
+          planScopedSettingsPatch(project, environments, { defaultAutoPull: true }),
+          upgradedLaptop({
+            projectSettingsOverrides: { [laptopProjectId]: { defaultAutoPull: true } },
+          }),
+        ),
+      ).toEqual({ saved: [laptop.label], failed: unsupported });
+    });
+
+    it("reports a nested key dropped beside one that saved", async () => {
+      const patch = { defaultAutoPull: true, enableAgentBrowserAccess: false };
+      const persistServer = vi.fn(async ({ environmentId }: { environmentId: EnvironmentId }) => ({
+        _tag: "Success" as const,
+        value: {
+          ...DEFAULT_SERVER_SETTINGS,
+          projectSettingsOverrides:
+            environmentId === laptop.environmentId
+              ? { [laptopProjectId]: patch }
+              : { [projectId]: { defaultAutoPull: true } },
+        },
+      }));
+      expect(
+        await outcome(planScopedSettingsPatch(project, environments, patch), persistServer),
+      ).toEqual({ saved: [laptop.label], failed: unsupported });
+    });
+
+    it("accepts a write that matches what the environment already had", async () => {
+      expect(
+        await outcome(
+          planScopedSettingsPatch(all, environments, { reviewGuidesEnabled: false }),
+          upgradedLaptop({}),
+        ),
+      ).toEqual({ saved: [laptop.label, server.label], failed: [] });
+    });
+  });
+
   it("persists client keys locally at any scope alongside server keys", async () => {
     const persistServer = vi.fn().mockResolvedValue({ _tag: "Success" });
     const persistClient = vi.fn();
@@ -261,6 +347,7 @@ describe("scoped settings writes", () => {
       {
         environmentId: server.environmentId,
         label: server.label,
+        previous: expect.anything(),
         patch: {
           projectSettingsOverrides: {
             [projectId]: { enableAgentBrowserAccess: false, defaultAutoPull: true },
@@ -270,6 +357,7 @@ describe("scoped settings writes", () => {
       {
         environmentId: laptop.environmentId,
         label: laptop.label,
+        previous: expect.anything(),
         patch: { projectSettingsOverrides: { [laptopProjectId]: { defaultAutoPull: true } } },
       },
     ]);
@@ -295,6 +383,7 @@ describe("scoped settings writes", () => {
               mode: "custom",
               rules: {
                 worktreeAfterDays: 8,
+                worktreeSettledAfterDays: null,
                 worktreeOnDelete: false,
                 worktreeOnMerge: true,
                 worktreeUnchanged: false,
@@ -308,6 +397,15 @@ describe("scoped settings writes", () => {
     const plan = planScopedSettingsPatch(project, [machine, customized], {
       worktreeCleanup: { mode: "custom", rules: { worktreeOnDelete: true } },
     });
+    const settledPlan = planScopedSettingsPatch(project, [machine, customized], {
+      worktreeCleanup: { mode: "custom", rules: { worktreeSettledAfterDays: 0 } },
+    });
+    expect(
+      settledPlan.serverWrites.map((write) => write.patch.projectSettingsOverrides),
+    ).toMatchObject([
+      { [projectId]: { worktreeCleanup: { rules: { worktreeSettledAfterDays: 0 } } } },
+      { [laptopProjectId]: { worktreeCleanup: { rules: { worktreeSettledAfterDays: 0 } } } },
+    ]);
     expect(plan.serverWrites.map((write) => write.patch.projectSettingsOverrides)).toEqual([
       {
         [projectId]: {
@@ -316,6 +414,7 @@ describe("scoped settings writes", () => {
             mode: "custom",
             rules: {
               worktreeAfterDays: 8,
+              worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
               worktreeOnMerge: true,
               worktreeUnchanged: false,
@@ -330,6 +429,7 @@ describe("scoped settings writes", () => {
             mode: "custom",
             rules: {
               worktreeAfterDays: 30,
+              worktreeSettledAfterDays: null,
               worktreeOnDelete: true,
               worktreeOnMerge: false,
               worktreeUnchanged: false,
@@ -390,6 +490,7 @@ describe("scoped settings writes", () => {
       {
         environmentId: server.environmentId,
         label: server.label,
+        previous: expect.anything(),
         patch: { projectSettingsOverrides: { [projectId]: { enableAgentBrowserAccess: false } } },
       },
     ]);
@@ -526,6 +627,7 @@ describe("project overrides at environment scope", () => {
       {
         environmentId: laptop,
         label: laptop,
+        previous: expect.anything(),
         patch: {
           projectSettingsOverrides: { [fleet]: { defaultThreadEnvMode: "local" }, [t3]: null },
         },
@@ -643,4 +745,22 @@ describe("partial object patches at project scope", () => {
       },
     });
   });
+});
+
+it("routes legacy model preference keys exclusively to the selected environment", () => {
+  const patch = {
+    favorites: [{ provider: ProviderInstanceId.make("codex"), model: "sol" }],
+    providerModelPreferences: {},
+  };
+  const plan = planScopedSettingsPatch(named, environments, patch);
+  expect(plan.clientPatch).toEqual({});
+  expect(plan.hasClientWrite).toBe(false);
+  expect(plan.serverWrites).toEqual([
+    {
+      environmentId: server.environmentId,
+      label: server.label,
+      previous: expect.anything(),
+      patch,
+    },
+  ]);
 });

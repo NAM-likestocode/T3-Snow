@@ -118,7 +118,7 @@ export const make = Effect.gen(function* () {
   const answered = new Set<string>();
   const lock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<AutopilotSnapshot>({ threads: [] });
-  const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
+  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
 
   const recordChange = Effect.suspend(() => {
     const entries = [...states.entries()].map(([threadId, state]) => ({

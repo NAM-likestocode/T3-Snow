@@ -19,6 +19,7 @@ import {
   mergeEnvironmentSettings,
   persistClientSettingsPatch,
   useClientSettings,
+  useMigrateModelPreferences,
 } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -35,13 +36,13 @@ import {
   type ScopedSettingsPatch,
 } from "./scopedSettings";
 
-/** Effective settings for the representative target: project overrides applied on top of its environment. */
 export function useScopedSettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
   const { target } = useSettingsScope();
   const clientSettings = useClientSettings();
   const serverSettings = target?.settings ?? DEFAULT_SERVER_SETTINGS;
+  useMigrateModelPreferences(target?.environmentId ?? null, target?.settings ?? null);
   const settings = useMemo(
     () => mergeEnvironmentSettings(serverSettings, clientSettings),
     [clientSettings, serverSettings],
@@ -54,7 +55,6 @@ export function useScopedSettingsMixed(keys: readonly (keyof ServerSettings)[]):
   return scopedSettingsAreMixed(targets, keys);
 }
 
-/** Where the keys' effective values come from across the selected targets. */
 export function useScopedSettingSource(keys: readonly (keyof ServerSettings)[]) {
   const { targets } = useSettingsScope();
   return scopedSettingsSource(targets, keys);
@@ -120,11 +120,6 @@ export function useUpdateScopedSettings() {
   );
 }
 
-/**
- * Drop the project overrides for `keys` so the selected checkouts inherit
- * again. Rows also render outside the settings layout (provider cards,
- * dialogs), where there is no scope and nothing to clear.
- */
 export function useClearScopedSettings() {
   const context = useOptionalSettingsScope();
   const run = useRunScopedPlan();
@@ -137,7 +132,6 @@ export function useClearScopedSettings() {
   );
 }
 
-/** Clear `keys` on specific project entries, from an environment scope's chain popover. */
 export function useClearProjectOverrides() {
   const context = useOptionalSettingsScope();
   const run = useRunScopedPlan();

@@ -1,4 +1,5 @@
 import type {
+  EventId,
   MessageId,
   ModelSelection,
   NodeId,
@@ -6,6 +7,7 @@ import type {
   OrchestrationV2Actor,
   OrchestrationV2ConversationMessage,
   OrchestrationV2CreationSource,
+  OrchestrationV2DomainEvent,
   OrchestrationV2ProviderRef,
   OrchestrationV2Run,
   OrchestrationV2ThreadProjection,
@@ -18,6 +20,7 @@ import type {
 } from "@t3tools/contracts";
 import { runRanAfter } from "@t3tools/shared/orchestrationV2ThreadError";
 import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
 import { isOrchestrationV2WorkActive } from "@t3tools/contracts";
 
 function trimmed(value: string | null | undefined): string | undefined {
@@ -206,7 +209,6 @@ export function subagentResultForRun(
   };
 }
 
-/** A finished turn can still own live children or queued completion follow-ups. */
 export function delegatedTaskProgress(projection: {
   readonly runs: OrchestrationV2ThreadProjection["runs"];
   readonly messages: ReadonlyArray<
@@ -229,8 +231,6 @@ export function delegatedTaskProgress(projection: {
   const workRuns = projection.runs.filter(
     (run) => !monitorRuns.has(run.id) && run.status !== "rolled_back",
   );
-  // A held queue waits for the user to resume it (after Stop, a restart, or a
-  // provider failure), so its runs are not work the task still owes.
   const active = workRuns.some(
     (run) => !terminal(run.status) && !(run.status === "queued" && run.queueHeld === true),
   );
@@ -257,3 +257,157 @@ export function delegatedTaskProgress(projection: {
     resultRun,
   };
 }
+
+function writtenIds(
+  emitted: ReadonlyArray<OrchestrationV2DomainEvent>,
+  type: "subagent.updated" | "node.updated" | "turn-item.updated",
+): ReadonlySet<string> {
+  return new Set(emitted.flatMap((event) => (event.type === type ? [event.payload.id] : [])));
+}
+
+export const endOrphanedNativeSubagent = <E>(input: {
+  readonly projection: Pick<OrchestrationV2ThreadProjection, "nodes" | "subagents" | "turnItems">;
+  readonly subagentId: NodeId;
+  readonly status: "completed" | "failed" | "interrupted" | "cancelled";
+  readonly completedAt?: DateTime.Utc;
+  readonly result?: string | null;
+  readonly now: DateTime.Utc;
+  readonly emitted: ReadonlyArray<OrchestrationV2DomainEvent>;
+  readonly allocateEventId: () => Effect.Effect<EventId, E>;
+}) =>
+  Effect.gen(function* () {
+    const { now, status, subagentId, completedAt = now } = input;
+    const subagent = input.projection.subagents.find((entry) => entry.id === subagentId);
+    if (subagent?.origin !== "provider_native") return [];
+    const node = input.projection.nodes.find((entry) => entry.id === subagentId);
+    const item = input.projection.turnItems.find(
+      (entry) => entry.type === "subagent" && entry.subagentId === subagentId,
+    );
+    const scope = {
+      threadId: subagent.threadId,
+      ...(subagent.runId === null ? {} : { runId: subagent.runId }),
+      nodeId: subagentId,
+      providerInstanceId: subagent.providerInstanceId,
+      occurredAt: now,
+    };
+    const events: Array<OrchestrationV2DomainEvent> = [];
+    if (
+      isOrchestrationV2WorkActive(subagent.status) &&
+      !writtenIds(input.emitted, "subagent.updated").has(subagentId)
+    ) {
+      events.push({
+        ...scope,
+        id: yield* input.allocateEventId(),
+        type: "subagent.updated",
+        driver: subagent.driver,
+        payload: {
+          ...subagent,
+          status,
+          completedAt,
+          updatedAt: now,
+          ...(input.result === undefined ? {} : { result: input.result }),
+        },
+      });
+    }
+    if (
+      node !== undefined &&
+      isOrchestrationV2WorkActive(node.status) &&
+      !writtenIds(input.emitted, "node.updated").has(subagentId)
+    ) {
+      events.push({
+        ...scope,
+        id: yield* input.allocateEventId(),
+        type: "node.updated",
+        payload: { ...node, status, completedAt },
+      });
+    }
+    if (
+      item !== undefined &&
+      isOrchestrationV2WorkActive(item.status) &&
+      !writtenIds(input.emitted, "turn-item.updated").has(item.id)
+    ) {
+      events.push({
+        ...scope,
+        id: yield* input.allocateEventId(),
+        type: "turn-item.updated",
+        payload: {
+          ...item,
+          status,
+          completedAt,
+          updatedAt: now,
+          ...(input.result === undefined ? {} : { result: input.result }),
+        },
+      });
+    }
+    return events;
+  });
+
+export const endRunlessRootTurns = <E>(input: {
+  readonly threadId: ThreadId;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly projection: Pick<OrchestrationV2ThreadProjection, "nodes" | "turnItems">;
+  readonly status: "completed" | "failed" | "interrupted" | "cancelled";
+  readonly completedAt?: DateTime.Utc;
+  readonly now: DateTime.Utc;
+  readonly emitted: ReadonlyArray<OrchestrationV2DomainEvent>;
+  readonly allocateEventId: () => Effect.Effect<EventId, E>;
+}) =>
+  Effect.gen(function* () {
+    const { now, status, completedAt = now } = input;
+    const endedNodeIds = writtenIds(input.emitted, "node.updated");
+    const endedItemIds = writtenIds(input.emitted, "turn-item.updated");
+    const scope = {
+      threadId: input.threadId,
+      providerInstanceId: input.providerInstanceId,
+      occurredAt: now,
+    };
+    const events: Array<OrchestrationV2DomainEvent> = [];
+    for (const node of input.projection.nodes) {
+      if (
+        node.kind !== "root_turn" ||
+        node.runId !== null ||
+        !isOrchestrationV2WorkActive(node.status)
+      ) {
+        continue;
+      }
+      if (!endedNodeIds.has(node.id)) {
+        events.push({
+          ...scope,
+          id: yield* input.allocateEventId(),
+          type: "node.updated",
+          nodeId: node.id,
+          payload: { ...node, status, completedAt },
+        });
+      }
+      for (const item of input.projection.turnItems) {
+        if (
+          item.nodeId !== node.id ||
+          item.runId !== null ||
+          !isOrchestrationV2WorkActive(item.status) ||
+          endedItemIds.has(item.id)
+        ) {
+          continue;
+        }
+        events.push({
+          ...scope,
+          id: yield* input.allocateEventId(),
+          type: "turn-item.updated",
+          nodeId: node.id,
+          payload: {
+            ...item,
+            status:
+              status === "completed" &&
+              (item.type === "command_execution" || item.type === "dynamic_tool")
+                ? "failed"
+                : status,
+            completedAt,
+            updatedAt: now,
+            ...(item.type === "reasoning" || item.type === "assistant_message"
+              ? { streaming: false }
+              : {}),
+          },
+        });
+      }
+    }
+    return events;
+  });

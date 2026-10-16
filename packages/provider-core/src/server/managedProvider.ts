@@ -106,7 +106,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
       yield* Fiber.interrupt(previousFiber).pipe(Effect.ignore);
     }
 
-    if (!input.enrichSnapshot) {
+    if (!input.enrichSnapshot || !snapshot.enabled) {
       return;
     }
 
@@ -160,7 +160,6 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
         const previous = state.snapshot.auth;
         const differs = (a: string | undefined, b: string | undefined) =>
           a !== undefined && b !== undefined && a !== b;
-        // Limits read without a workspace cannot be attributed to a new one.
         const switchedAccount =
           differs(probedSnapshot.auth.email?.toLowerCase(), previous.email?.toLowerCase()) ||
           (probedSnapshot.auth.workspaceId !== undefined &&
@@ -193,11 +192,6 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
   const applySnapshot = (nextSettings: Settings, options?: { readonly forceRefresh?: boolean }) =>
     refreshSemaphore.withPermits(1)(applySnapshotBase(nextSettings, options));
 
-  /**
-   * Runtime usage updates arrive between probes. They patch only
-   * `usageLimits` on whatever snapshot is published and leave the enrichment
-   * generation alone, so an in-flight enrichment still lands.
-   */
   const applyUsageLimits: ManagedServerProvider["applyUsageLimits"] = (update) =>
     Effect.gen(function* () {
       const snapshotToPublish = yield* Ref.modify(snapshotStateRef, (state) => {
@@ -206,8 +200,6 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
           update,
           checkedAt: update.checkedAt,
         });
-        // `applyUsageLimitsUpdate` hands back the same object when nothing
-        // moved, which is the common case for Codex's per-tick notification.
         if (usageLimits === state.snapshot.usageLimits) {
           return [null, state] as const;
         }

@@ -1,15 +1,4 @@
-/**
- * Pins `./GitCafeSourceControlProvider.ts`, which pass 2 creates:
- *
- * - `discovery: SourceControlCliDiscoverySpec` — kind `"gitcafe"`, executable `"cafe"`,
- *   `authArgs` ending in `["auth", "status", "--json"]` against `https://git.cafe/api`, and a
- *   `parseAuth` that reads cafe's `{ schemaVersion: 1, data: { host, username } }` answer and its
- *   `{ schemaVersion: 1, error: { code, status, message } }` failure envelope.
- * - `make: Effect<SourceControlProvider["Service"], never, GitCafeApi | SourceControlHost>` with
- *   kind `"gitcafe"`, resolving the repository and host from the checkout's remote.
- *
- * Uses `./GitCafeApi.ts` and `./GitCafeCredentials.ts` as pinned in the sibling tests.
- */
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
 import { GitCommandError } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -41,16 +30,8 @@ const failure = (code: string, status: number | null) => ({
 });
 
 describe("GitCafeSourceControlProvider", () => {
-  it("probes the cafe CLI against production", () => {
-    const { discovery } = GitCafeSourceControlProvider;
-    assert.strictEqual(discovery.kind, "gitcafe");
-    assert.strictEqual(discovery.executable, "cafe");
-    assert.deepStrictEqual(discovery.authArgs.slice(0, 2), ["--host", "https://git.cafe/api"]);
-    assert.deepStrictEqual(discovery.authArgs.slice(-3), ["auth", "status", "--json"]);
-  });
-
   it("reads a signed-in account and keeps transient failures apart from sign-out", () => {
-    const { parseAuth } = GitCafeSourceControlProvider.discovery;
+    const { parseAuth } = GitCafeSourceControlProvider;
     const signedIn = parseAuth(
       authAnswer({ stdout: { schemaVersion: 1, data: { host: "git.cafe", username: "alice" } } }),
     );
@@ -87,7 +68,11 @@ describe("GitCafeSourceControlProvider", () => {
       );
     });
     const context = {
-      provider: { kind: "gitcafe" as const, name: "GitCafe", baseUrl: `https://${host}` },
+      provider: {
+        kind: SourceControlProviderKind.make("gitcafe"),
+        name: "GitCafe",
+        baseUrl: `https://${host}`,
+      },
       remoteName: "origin",
       remoteUrl,
     };
@@ -110,7 +95,7 @@ describe("GitCafeSourceControlProvider", () => {
     }).pipe(
       Effect.provide(
         GitCafeApi.layer.pipe(
-          Layer.provide(GitCafeCredentials.layer),
+          Layer.provideMerge(GitCafeCredentials.layer),
           Layer.provideMerge(TestSourceControlHost.layer()),
           Layer.provide(
             Layer.succeed(HostProcess.Environment, { CAFE_TOKEN: "env-token", CAFE_HOST: host }),
@@ -137,7 +122,6 @@ describe("GitCafeSourceControlProvider", () => {
       });
       return Effect.gen(function* () {
         const provider = yield* GitCafeSourceControlProvider.make;
-        // The checkout has no remote at all, as when a repository is about to be created.
         assert.deepStrictEqual(
           yield* provider.getRepositoryCloneUrls({ cwd: "/repo", repository: "team/project" }),
           {
@@ -157,7 +141,7 @@ describe("GitCafeSourceControlProvider", () => {
       }).pipe(
         Effect.provide(
           GitCafeApi.layer.pipe(
-            Layer.provide(GitCafeCredentials.layer),
+            Layer.provideMerge(GitCafeCredentials.layer),
             Layer.provideMerge(
               TestSourceControlHost.layer({
                 git: {
@@ -220,7 +204,11 @@ describe("GitCafeSourceControlProvider", () => {
       remoteUrl === undefined
         ? undefined
         : {
-            provider: { kind: "gitcafe" as const, name: "GitCafe", baseUrl: "https://git.cafe" },
+            provider: {
+              kind: SourceControlProviderKind.make("gitcafe"),
+              name: "GitCafe",
+              baseUrl: "https://git.cafe",
+            },
             remoteName: "origin",
             remoteUrl,
           };
@@ -235,7 +223,7 @@ describe("GitCafeSourceControlProvider", () => {
     }).pipe(
       Effect.provide(
         GitCafeApi.layer.pipe(
-          Layer.provide(GitCafeCredentials.layer),
+          Layer.provideMerge(GitCafeCredentials.layer),
           Layer.provideMerge(
             TestSourceControlHost.layer({
               git: {
@@ -295,7 +283,7 @@ describe("GitCafeSourceControlProvider", () => {
     }).pipe(
       Effect.provide(
         GitCafeApi.layer.pipe(
-          Layer.provide(GitCafeCredentials.layer),
+          Layer.provideMerge(GitCafeCredentials.layer),
           Layer.provideMerge(
             TestSourceControlHost.layer({
               process: {

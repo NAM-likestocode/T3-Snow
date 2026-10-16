@@ -14,6 +14,7 @@ export type SettingsSheetTarget =
   | "SettingsProviderAccounts"
   | "SettingsKeyboard"
   | "SettingsDictation"
+  | "SettingsMicrophone"
   | "SettingsFollowUp"
   | "SettingsScheduledTasks"
   | "SettingsProjectGrouping"

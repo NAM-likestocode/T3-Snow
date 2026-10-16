@@ -27,8 +27,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { AgentScope } from "@t3tools/shared/AgentScope";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+import { getModelSelectionStringOptionValue, modelSelectionsEqual } from "@t3tools/shared/model";
 import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -36,6 +38,7 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 import { makeProviderFailureTurnItem } from "@t3tools/provider-core/server/failure";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import { stripUnservedToolOutputImageBytes } from "./toolOutputImageBytes.ts";
+import { boundFileChangeForStorage } from "./WireProjection.ts";
 
 export class ProviderEventNormalizeError extends Schema.TaggedError<ProviderEventNormalizeError>()(
   "ProviderEventNormalizeError",
@@ -199,19 +202,12 @@ function withPlanStepDurations(
   };
 }
 
-/** Settled runs that carried conversation to the provider. */
 const CONVERSATION_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
   "completed",
   "interrupted",
   "failed",
 ]);
 
-/**
- * Settled runs on a provider thread that a native rewind left off the active
- * branch. A run whose provider turn has a strong native ref is judged by that
- * ref. A run without one cannot be located, so it falls with everything after
- * the last run still on the branch.
- */
 function runsOffNativeBranch(input: {
   readonly projection: Pick<OrchestrationV2ThreadProjection, "runs" | "attempts" | "providerTurns">;
   readonly providerThreadId: ProviderThreadId;
@@ -268,19 +264,11 @@ export interface ProviderEventIngestorV2Shape {
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2DomainEvent>, ProviderEventIngestorV2Error>;
   readonly ingestNormalized: (
     input: ProviderEventIngestInput & {
-      /**
-       * Atomically reject mutable provider state emitted by an attempt that
-       * lost ownership while the adapter event was in flight.
-       */
       readonly writeIfRunCurrent?: {
         readonly runId: RunId;
         readonly activeAttemptId: RunAttemptId;
         readonly expectedStatus: OrchestrationV2Run["status"];
       };
-      /**
-       * Atomically reject provider-thread snapshots from an attempt that no
-       * longer owns the run or from a run that no longer owns the thread.
-       */
       readonly writeIfProviderThreadOwner?: {
         readonly providerThreadId: ProviderThreadId;
         readonly runId: RunId;
@@ -306,6 +294,7 @@ export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   never,
   | EventSink.EventSinkV2
+  | GitVcsDriver.GitVcsDriver
   | IdAllocator.IdAllocatorV2
   | ProjectionStore.ProjectionStoreV2
   | ThreadCommandExecutor.ThreadCommandExecutor
@@ -313,6 +302,7 @@ export const layer: Layer.Layer<
   ProviderEventIngestorV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
+    const git = yield* GitVcsDriver.GitVcsDriver;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const threadCommands = yield* ThreadCommandExecutor.ThreadCommandExecutor;
@@ -400,23 +390,32 @@ export const layer: Layer.Layer<
     );
 
     /**
-     * A native subagent's thread starts on the parent's model when the
-     * provider names the real one later (a Claude agent file's model arrives
-     * with the subagent's first reply). Clients read the thread's model, so
-     * move the thread to the reported one. Thread commands rewrite the whole
-     * thread row under the thread's lock, so this read and write take it too.
+     * A native subagent's thread starts on the parent's model when the provider
+     * names the real one later (a Claude agent file's model arrives with the
+     * subagent's first reply). Thread commands rewrite the whole thread row
+     * under the thread's lock, so this read and write take it too.
      */
     const syncSubagentThreadModel = Effect.fn("ProviderEventIngestor.syncSubagentThreadModel")(
       function* (input: ProviderEventIngestInput, subagent: OrchestrationV2Subagent) {
         const { childThreadId, model } = subagent;
-        if (subagent.origin !== "provider_native" || childThreadId === null || model === null) {
+        if (
+          subagent.origin !== "provider_native" ||
+          childThreadId === null ||
+          (model === null && subagent.modelSelection === undefined)
+        ) {
           return [];
         }
+        const reportedSelection = ({ modelSelection }: { modelSelection: ModelSelection }) =>
+          subagent.modelSelection ??
+          (model === null || model === modelSelection.model
+            ? modelSelection
+            : { instanceId: modelSelection.instanceId, model });
         const staleThread = projections.getThread(childThreadId).pipe(
-          Effect.map((thread) => (thread.modelSelection.model === model ? null : thread)),
+          Effect.map((thread) =>
+            modelSelectionsEqual(thread.modelSelection, reportedSelection(thread)) ? null : thread,
+          ),
           Effect.catchTags({ ProjectionStoreThreadNotFoundError: () => Effect.succeed(null) }),
         );
-        // Nearly every update already matches; only a mismatch takes the lock.
         if ((yield* staleThread) === null) return [];
         return yield* threadCommands.withLock(
           childThreadId,
@@ -427,10 +426,9 @@ export const layer: Layer.Layer<
             const event = yield* makeDomainEvent(input, {
               type: "thread.model-selection-updated",
               threadId: thread.id,
-              // The parent's options belong to the parent's model.
               payload: {
                 ...thread,
-                modelSelection: { instanceId: thread.modelSelection.instanceId, model },
+                modelSelection: reportedSelection(thread),
                 updatedAt: now,
               },
               occurredAt: now,
@@ -442,10 +440,10 @@ export const layer: Layer.Layer<
     );
 
     /**
-     * The provider rewound its conversation outside T3. Retire the runs that
-     * fell off its active branch with the same run, root-node, and checkpoint
-     * updates CheckpointRollbackService writes for a T3 revert. The run
-     * reporting the rewind performed it and stays, so it keeps lastRunOrdinal.
+     * Retire the runs that fell off its active branch with the same run,
+     * root-node, and checkpoint updates CheckpointRollbackService writes for a
+     * T3 revert. The run reporting the rewind performed it and stays, so it
+     * keeps lastRunOrdinal.
      */
     const rollBackRewoundRuns = Effect.fn("ProviderEventIngestor.rollBackRewoundRuns")(function* (
       input: ProviderEventIngestInput,
@@ -522,14 +520,37 @@ export const layer: Layer.Layer<
     const normalize: ProviderEventIngestorV2Shape["normalize"] = (input) =>
       Effect.gen(function* () {
         switch (input.event.type) {
-          case "app_thread.created":
+          case "app_thread.created": {
+            const offered = input.event.appThread;
+            const existing = yield* projections.getThread(offered.id).pipe(
+              Effect.catchTags({
+                ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
+              }),
+            );
+            if (
+              existing !== null &&
+              existing.title === offered.title &&
+              modelSelectionsEqual(existing.modelSelection, offered.modelSelection)
+            )
+              return [];
+            const now = yield* DateTime.now;
             return [
               yield* makeDomainEvent(input, {
-                type: "thread.created",
-                threadId: input.event.appThread.id,
-                payload: input.event.appThread,
+                type: existing === null ? "thread.created" : "thread.metadata-updated",
+                threadId: offered.id,
+                payload:
+                  existing === null
+                    ? offered
+                    : {
+                        ...existing,
+                        title: offered.title,
+                        modelSelection: offered.modelSelection,
+                        updatedAt: now,
+                      },
+                occurredAt: now,
               }),
             ];
+          }
           case "provider_session.updated":
             return [
               yield* makeDomainEvent(input, {
@@ -574,6 +595,9 @@ export const layer: Layer.Layer<
               }),
             ];
           case "node.updated":
+            // Adapters send an unchanged node again with each text delta. Compare with the
+            // stored node, not the last one sent, because the server also writes nodes.
+            if (yield* projections.isNodeStored(input.event.node)) return [];
             return [
               yield* makeDomainEvent(input, {
                 type: "node.updated",
@@ -608,7 +632,9 @@ export const layer: Layer.Layer<
               yield* makeDomainEvent(input, {
                 type: "turn-item.updated",
                 threadId: input.event.turnItem.threadId,
-                payload: stripUnservedToolOutputImageBytes(input.event.turnItem),
+                payload: boundFileChangeForStorage(
+                  stripUnservedToolOutputImageBytes(input.event.turnItem),
+                ),
                 runId: input.event.turnItem.runId,
                 nodeId: input.event.turnItem.nodeId,
               }),
@@ -648,14 +674,15 @@ export const layer: Layer.Layer<
               }),
             ];
           }
+          case "command_output.delta":
+            // Live output is routed to the command output hub before ingestion.
+            return [];
           case "turn.terminal":
             const dismissed = yield* dismissNativeUserInputs(input, input.event.providerTurnId);
             if (input.event.status !== "failed") {
               return dismissed;
             }
             const occurredAt = yield* DateTime.now;
-            // A turn that failed because systemd killed the agent's scope for
-            // memory would otherwise read as a plain provider crash.
             const failure = (yield* agentScope.oomKilled(input.threadId))
               ? { ...input.event.failure, message: "Killed: out of memory.", code: "oom_kill" }
               : input.event.failure;
@@ -739,6 +766,43 @@ export const layer: Layer.Layer<
           return result.storedEvents;
         }).pipe(
           Effect.flatMap((storedEvents) =>
+            Effect.gen(function* () {
+              if (input.event.type !== "app_thread.created") return storedEvents;
+              const created = storedEvents.find((stored) => stored.event.type === "thread.created");
+              if (created?.event.type !== "thread.created") return storedEvents;
+              const child = created.event.payload;
+              if (
+                child.worktreePath === null ||
+                child.branch === null ||
+                !isTemporaryWorktreeBranch(child.branch)
+              )
+                return storedEvents;
+              // Git renames before scanning committed threads. If that scan missed this
+              // creation, HEAD already has the new name, even if the parent moved away.
+              const branch = yield* git.resolveBranchName(child.worktreePath, "HEAD");
+              if (branch === null || branch === child.branch) return storedEvents;
+              const now = yield* DateTime.now;
+              const event = yield* makeDomainEvent(input, {
+                type: "thread.metadata-updated",
+                threadId: child.id,
+                payload: { ...child, branch, updatedAt: now },
+                occurredAt: now,
+              });
+              const synced = yield* eventSink.write({ events: [event] });
+              return [...storedEvents, ...synced];
+            }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("Native thread worktree branch recheck failed", {
+                  threadId:
+                    input.event.type === "app_thread.created"
+                      ? input.event.appThread.id
+                      : input.threadId,
+                  cause,
+                }).pipe(Effect.as(storedEvents)),
+              ),
+            ),
+          ),
+          Effect.flatMap((storedEvents) =>
             storedEvents.length === 0 || input.event.type !== "subagent.updated"
               ? Effect.succeed(storedEvents)
               : syncSubagentThreadModel(input, input.event.subagent).pipe(
@@ -782,6 +846,10 @@ export const layer: Layer.Layer<
               );
             }),
           ),
+          (effect) =>
+            input.event.type === "app_thread.created"
+              ? threadCommands.withLock(input.event.appThread.id, effect)
+              : effect,
         ),
     });
   }),

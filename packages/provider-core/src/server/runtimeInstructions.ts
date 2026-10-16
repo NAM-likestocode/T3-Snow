@@ -19,7 +19,6 @@ When the t3-code MCP server exposes defer, use it instead of sleeping or polling
 
 /**
  * Shared runtime context; omit model and effort when the harness manages them dynamically.
- * `modelName` is the display name users see in the model picker; `model` is the slug.
  */
 export function buildRuntimeInstructions(runtime: {
   readonly harness: string;

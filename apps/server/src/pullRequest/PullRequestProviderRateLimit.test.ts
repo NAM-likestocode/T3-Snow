@@ -1,8 +1,10 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 
 import * as AzureDevOpsCli from "@t3tools/source-control-azure-devops/server/AzureDevOpsCli";
 import * as BitbucketApi from "@t3tools/source-control-bitbucket/server/BitbucketApi";
-import * as GitHubApi from "@t3tools/source-control-github/server/GitHubApi";
+import * as GitHubRest from "@t3tools/source-control-github/server/GitHubRest";
+import * as GitHubRequestPolicy from "@t3tools/source-control-github/server/GitHubRequestPolicy";
 import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import { azureDevOpsProviderFailure } from "@t3tools/source-control-azure-devops/server/AzureDevOpsPullRequestProvider";
@@ -15,7 +17,7 @@ const cause = new Error("redacted provider failure");
 it("classifies rate limits from every pull-request provider", () => {
   assert.deepStrictEqual(
     gitHubProviderFailure(
-      new GitHubApi.GitHubApiRateLimitError({ host: "github.com", operation: "execute" }),
+      new GitHubRequestPolicy.GitHubApiRateLimitError({ host: "github.com", operation: "execute" }),
     ),
     { reason: "rate-limited" },
   );
@@ -59,7 +61,7 @@ it("keeps GitHub's exact retry time", () => {
   assert.deepStrictEqual(
     gitHubProviderFailure(
       new SourceControlRateLimit.SourceControlRateLimitPausedError({
-        provider: "github",
+        provider: SourceControlProviderKind.make("github"),
         host: "github.com",
         retryAt: 1_786_802_400_000,
       }),

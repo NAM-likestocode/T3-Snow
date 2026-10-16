@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -10,18 +11,19 @@ import {
   type ChangeRequest,
 } from "@t3tools/contracts";
 import {
+  probeSourceControlProvider,
   providerAuth,
   type SourceControlCliDiscoverySpec,
+  type SourceControlManagedCliDiscoverySpec,
 } from "@t3tools/source-control-core/server/discovery";
 import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 
 import * as GitCafeApi from "./GitCafeApi.ts";
+import * as GitCafeCredentials from "./GitCafeCredentials.ts";
 import * as GitCafeHosts from "./gitCafeHosts.ts";
 
-/** Discovery reports the production account; repository operations pick their own host. */
 const AUTH_HOST = "git.cafe";
-/** `cafe repo create --clone` waits this long, polling at this pace, for admission to settle. */
 const ADMISSION_TIMEOUT = "30 seconds";
 const ADMISSION_POLL_INTERVAL = "500 millis";
 const cliArgs = (host: string) => [
@@ -39,7 +41,6 @@ const decodeAuth = Schema.decodeUnknownResult(
     }),
   ),
 );
-/** `cafe`'s failure envelope, which it prints on its own line after any raw problem body. */
 const decodeFailure = Schema.decodeUnknownResult(
   Schema.fromJsonString(
     Schema.Struct({
@@ -57,9 +58,9 @@ const cliFailure = (output: string) =>
     .map((line) => decodeFailure(line.trim()))
     .find(Result.isSuccess)?.success.error;
 
-export const discovery = {
+const cliDiscovery = {
   type: "cli",
-  kind: "gitcafe",
+  kind: SourceControlProviderKind.make("gitcafe"),
   label: "GitCafe",
   executable: "cafe",
   versionArgs: ["--version"],
@@ -89,8 +90,32 @@ export const discovery = {
       detail: `GitCafe authentication status could not be read. Run \`cafe auth login --host https://${AUTH_HOST}/api\`.`,
     });
   },
-  installHint: `Install the GitCafe CLI with \`bun install -g @gitcafe/cli\`, then run \`cafe auth login --host https://${AUTH_HOST}/api\`, or set CAFE_TOKEN on the server.`,
+  installHint: `Install the GitCafe CLI with \`bun install -g @gitcafe/cli\`, then run \`cafe auth login --host https://${AUTH_HOST}/api\`, save a token in Settings, or set CAFE_TOKEN on the server.`,
 } satisfies SourceControlCliDiscoverySpec;
+
+export const parseAuth = cliDiscovery.parseAuth;
+
+export const makeDiscovery = Effect.gen(function* () {
+  const { process } = yield* SourceControlHost.SourceControlHost;
+  const credentials = yield* GitCafeCredentials.GitCafeCredentials;
+  return {
+    type: "managed-cli",
+    kind: cliDiscovery.kind,
+    label: cliDiscovery.label,
+    installHint: cliDiscovery.installHint,
+    probe: (cwd: string) =>
+      credentials.cliEnv(AUTH_HOST).pipe(
+        Effect.flatMap((env) =>
+          probeSourceControlProvider({
+            cwd,
+            spec: cliDiscovery,
+            process: { run: (input) => process.run({ ...input, env: { ...input.env, ...env } }) },
+          }),
+        ),
+      ),
+    refineUnknownRemote: () => Effect.succeed(null),
+  } satisfies SourceControlManagedCliDiscoverySpec;
+});
 
 const Repository = Schema.Struct({
   name: TrimmedNonEmptyString,
@@ -138,7 +163,6 @@ const cloneUrls = (target: Target) => ({
   sshUrl: `ssh@${target.host}:${target.repository}.git`,
 });
 
-/** An scp-like `user@host:path` or `ssh://` remote; HTTPS remotes may carry userinfo too. */
 const isSshRemote = (remoteUrl: string | undefined) =>
   remoteUrl !== undefined && (/^ssh:\/\//iu.test(remoteUrl) || /^[^/:]+@[^/:]+:/u.test(remoteUrl));
 
@@ -147,10 +171,11 @@ const pullUrlPattern = /^https:\/\/([^/]+)\/([^/]+\/[^/]+)\/pulls\/(\d+)\/?(?:[?
 export const make = Effect.gen(function* () {
   const api = yield* GitCafeApi.GitCafeApi;
   const host = yield* SourceControlHost.SourceControlHost;
+  const credentials = yield* GitCafeCredentials.GitCafeCredentials;
 
   const error = (operation: string, cwd: string, detail: string, cause?: unknown) =>
     new SourceControlProviderError({
-      provider: "gitcafe",
+      provider: SourceControlProviderKind.make("gitcafe"),
       operation,
       cwd,
       detail,
@@ -173,15 +198,20 @@ export const make = Effect.gen(function* () {
       ),
     );
   const cafe = (operation: string, cwd: string, target: Target, args: ReadonlyArray<string>) =>
-    host.process
-      .run({
-        operation: `GitCafeSourceControlProvider.${operation}`,
-        command: "cafe",
-        cwd,
-        args: [...cliArgs(target.host), ...args],
-        env: { CAFE_OUTPUT: "json" },
-        timeoutMs: 30_000,
-      })
+    credentials
+      .cliEnv(target.host)
+      .pipe(
+        Effect.flatMap((env) =>
+          host.process.run({
+            operation: `GitCafeSourceControlProvider.${operation}`,
+            command: "cafe",
+            cwd,
+            args: [...cliArgs(target.host), ...args],
+            env: { CAFE_OUTPUT: "json", ...env },
+            timeoutMs: 30_000,
+          }),
+        ),
+      )
       .pipe(
         Effect.mapError((cause) =>
           error(
@@ -194,7 +224,6 @@ export const make = Effect.gen(function* () {
         ),
       );
 
-  /** The repository a call names, falling back to the checkout's own GitCafe remote. */
   const resolveTarget = Effect.fn("GitCafeSourceControlProvider.resolveTarget")(function* (
     operation: string,
     input: {
@@ -206,8 +235,6 @@ export const make = Effect.gen(function* () {
     const named =
       input.repository === undefined ? null : GitCafeHosts.parseGitCafeRemote(input.repository);
     if (named) return named;
-    // A bare owner/name only asks the checkout which GitCafe host it is on, so a checkout with no
-    // remote (a repository being created) still resolves, on git.cafe.
     const readRemote = host.git
       .resolvePrimaryRemoteName(input.cwd)
       .pipe(
@@ -227,7 +254,6 @@ export const make = Effect.gen(function* () {
       if (remote) return remote;
       return yield* error(operation, input.cwd, "No GitCafe repository remote was found.");
     }
-    // A bare owner/name lives on the checkout's own GitCafe host.
     const repository = GitCafeHosts.gitCafeRepositoryPath(input.repository);
     if (repository !== null)
       return { host: remote?.host ?? AUTH_HOST, repository } satisfies Target;
@@ -249,7 +275,6 @@ export const make = Effect.gen(function* () {
       urlHost && match?.[2]
         ? { host: urlHost, repository: match[2] }
         : yield* resolveTarget("getChangeRequest", input);
-    // A pull request URL on another host is not a GitCafe pull request number.
     const number = match
       ? urlHost
         ? match[3]
@@ -269,7 +294,7 @@ export const make = Effect.gen(function* () {
     );
     const owner = target.repository.split("/")[0] ?? null;
     return {
-      provider: "gitcafe",
+      provider: SourceControlProviderKind.make("gitcafe"),
       number: pull.number,
       title: pull.title,
       url: `https://${target.host}/${target.repository}/pulls/${pull.number}`,
@@ -290,7 +315,7 @@ export const make = Effect.gen(function* () {
   });
 
   return SourceControlProvider.SourceControlProvider.of({
-    kind: "gitcafe",
+    kind: SourceControlProviderKind.make("gitcafe"),
     repositoryNameFromRemoteUrl: (url) => GitCafeHosts.parseGitCafeRemote(url)?.repository ?? null,
     getChangeRequest: getPull,
     listChangeRequests: Effect.fn("GitCafeSourceControlProvider.listChangeRequests")(
@@ -415,7 +440,6 @@ export const make = Effect.gen(function* () {
             Effect.timeoutOption(ADMISSION_TIMEOUT),
             Effect.map(Option.getOrElse(() => pending)),
           );
-      // Anything short of complete is not yet usable.
       if (resource.state !== "complete")
         return yield* error(
           "createRepository",
@@ -459,7 +483,6 @@ export const make = Effect.gen(function* () {
               : yield* git.ensureRemote({
                   cwd: input.cwd,
                   preferredName: "gitcafe",
-                  // SSH only when the checkout already reaches GitCafe over SSH; HTTPS otherwise.
                   url: isSshRemote(input.context?.remoteUrl)
                     ? `ssh@${pullHost}:${sourceRepository}.git`
                     : `https://${pullHost}/${sourceRepository}.git`,
@@ -472,7 +495,6 @@ export const make = Effect.gen(function* () {
           if (input.force !== true && !branches.includes(localBranch))
             yield* git.fetchRemoteBranch({ ...remoteBranch, localBranch });
           else yield* git.fetchRemoteTrackingBranch(remoteBranch);
-          // `checkout -B` moves even the checked-out branch, and refuses to overwrite local edits.
           if (input.force === true)
             yield* git.execute({
               operation: "GitCafeSourceControlProvider.checkoutChangeRequest",

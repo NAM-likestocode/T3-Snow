@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -38,7 +39,7 @@ it.effect("maps GitLab MR summaries into provider-neutral change requests", () =
     });
 
     assert.deepStrictEqual(changeRequest, {
-      provider: "gitlab",
+      provider: SourceControlProviderKind.make("gitlab"),
       number: 42,
       title: "Add GitLab provider",
       url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/42",
@@ -189,7 +190,7 @@ it("refines unknown GitLab remotes with mixed-case provider hosts", () => {
     cwd: "/repo",
     context: {
       provider: {
-        kind: "unknown",
+        kind: SourceControlProviderKind.make("unknown"),
         name: "Self-Hosted.Example.Test",
         baseUrl: "https://Self-Hosted.Example.Test",
       },
@@ -211,6 +212,33 @@ it("refines unknown GitLab remotes with mixed-case provider hosts", () => {
     name: "GitLab Self-Hosted",
     baseUrl: "https://Self-Hosted.Example.Test",
   });
+});
+
+it("tells a host glab has no login for apart from output that cannot say", () => {
+  const refine = (stderr: string) =>
+    GitLabSourceControlProvider.discovery.refineUnknownRemote?.({
+      cwd: "/repo",
+      context: {
+        provider: {
+          kind: SourceControlProviderKind.make("unknown"),
+          name: "git.example.test",
+          baseUrl: "https://git.example.test",
+        },
+        remoteName: "origin",
+        remoteUrl: "https://git.example.test/group/project.git",
+      },
+      auth: { exitCode: ChildProcessSpawner.ExitCode(1), stdout: "", stderr },
+    });
+
+  assert.strictEqual(
+    refine("x git.example.test has not been authenticated with glab. Run `glab auth login`"),
+    null,
+  );
+  assert.strictEqual(
+    refine("No GitLab instances have been authenticated with glab. Run `glab auth login`"),
+    null,
+  );
+  assert.strictEqual(refine("git.example.test\n  x API call failed: 503"), undefined);
 });
 
 it("parses authenticated GitLab auth status hosts with ports and single-label names", () => {

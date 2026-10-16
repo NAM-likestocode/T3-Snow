@@ -193,10 +193,8 @@ export const make = Effect.gen(function* () {
   const triggerLock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<DeferTriggersSnapshot>({ triggers: [] });
 
-  const uuid = crypto.randomUUIDv4.pipe(Effect.orDie);
+  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
   const nowMs = Clock.currentTimeMillis;
-
-  // --- persistence and change feed -----------------------------------------
 
   const persist = Effect.suspend(() => {
     const entries: PersistedTrigger[] = [...triggers.values()].map((trigger) => ({
@@ -224,8 +222,6 @@ export const make = Effect.gen(function* () {
   });
 
   const recordChange = Effect.andThen(persist, publish);
-
-  // --- thread helpers --------------------------------------------------------
 
   /** The thread, or undefined once it is gone or archived. */
   const readThread = (threadId: ThreadId) =>
@@ -264,8 +260,6 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.catchCause((cause) => Effect.logWarning("defer: wake-up not delivered", { cause })),
     );
-
-  // --- running commands ------------------------------------------------------
 
   const shell = yield* Effect.cached(
     Effect.gen(function* () {
@@ -330,8 +324,6 @@ export const make = Effect.gen(function* () {
         ),
       );
   });
-
-  // --- trigger lifecycle -----------------------------------------------------
 
   const fire = Effect.fn("DeferService.fire")(function* (
     trigger: ArmedTrigger,
