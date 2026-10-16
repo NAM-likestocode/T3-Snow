@@ -1,8 +1,4 @@
 /**
- * PiDriver — v1 `ProviderDriver` for the Pi coding agent, composing the
- * orchestrator-v2 adapter (`PiAdapterV2`), the snapshot/probe layer
- * (`PiProvider`), and Pi-backed text generation.
- *
  * Pi state (sessions, settings, extensions, auth) lives in the user's own
  * `~/.pi/agent`, so continuation identity uses the default instance grouping.
  */
@@ -17,6 +13,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import { piUsageReader } from "./usage.ts";
 import { makePiTextGeneration } from "./textGeneration.ts";
 import { PiAdapterV2Driver, type PiAdapterV2DriverEnv } from "./adapter.ts";
 import { ProviderDriverError } from "@t3tools/provider-core/server/errors";
@@ -51,7 +48,6 @@ const DRIVER_KIND = ProviderDriverKind.make("pi");
 const UPDATE = makePackageManagedProviderMaintenanceResolver({
   provider: DRIVER_KIND,
   npmPackageName: "@earendil-works/pi-coding-agent",
-  // Pi's updater covers its own installer and npm, pnpm, yarn, and bun globals.
   nativeUpdate: { args: ["update", "--self"] },
 });
 
@@ -80,12 +76,13 @@ const withInstanceIdentity =
     continuation: { groupKey: input.continuationGroupKey },
   });
 
-export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
+export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
   driverKind: DRIVER_KIND,
   metadata: {
     displayName: "Pi",
     supportsMultipleInstances: true,
   },
+  usage: piUsageReader,
   configSchema: PiSettings,
   defaultConfig: (): PiSettings => decodePiSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>

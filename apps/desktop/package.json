@@ -1,13 +1,13 @@
 {
   "name": "@t3tools/desktop",
-  "version": "0.0.45",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist-electron/boot.cjs",
   "scripts": {
     "ensure:electron": "node scripts/ensure-electron-runtime.mjs",
     "start": "node scripts/start-electron.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc-rs --noEmit",
     "test": "vp test run --passWithNoTests",
     "smoke-test": "node scripts/smoke-test.mjs"
   },
@@ -42,5 +42,5 @@
     "tailwindcss": "^4.0.0",
     "vite-plus": "catalog:"
   },
-  "productName": "T3 Code (Alpha)"
+  "productName": "T3 Code (Beta)"
 }

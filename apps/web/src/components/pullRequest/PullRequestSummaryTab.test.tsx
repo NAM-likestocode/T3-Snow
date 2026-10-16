@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import { EnvironmentId, ProjectId, type PullRequestDetailView } from "@t3tools/contracts";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -26,7 +27,7 @@ vi.mock("../ui/tooltip", () => ({
 import { PullRequestSummaryTab } from "./PullRequestSummaryTab";
 
 const detail: PullRequestDetailView = {
-  provider: "github",
+  provider: SourceControlProviderKind.make("github"),
   projectId: ProjectId.make("project"),
   projectTitle: "Project",
   workspaceRoot: "/workspace",
@@ -100,6 +101,7 @@ afterEach(() => {
 function render(value = detail) {
   return (
     <PullRequestSummaryTab
+      scrollerRef={() => {}}
       environmentId={EnvironmentId.make("environment")}
       threadRef={null}
       reference={value}
@@ -225,7 +227,6 @@ it("hides bot and resolved comments until the filter shows them, and remembers t
   ).toContain("13 hidden");
 
   act(() => filterItem("Bot comments").props.onCheckedChange(true));
-  // Bots now share the human comment's pages: the ten most recent, the oldest left behind.
   expect(texts().filter((text) => text.startsWith("Bot report"))).toHaveLength(9);
   expect(texts()).toContain("Human comment");
   expect(texts()).not.toContain("Bot report 0");
@@ -235,7 +236,6 @@ it("hides bot and resolved comments until the filter shows them, and remembers t
     renderer.root.findAllByType("button").some((button) => button.children.includes("Resolved")),
   ).toBe(true);
 
-  // Another pull request, or the same one opened again, keeps the reader's choice.
   act(() => renderer.unmount());
   act(() => {
     renderer = create(render({ ...value, url: `${value.url}0`, number: 10 }));

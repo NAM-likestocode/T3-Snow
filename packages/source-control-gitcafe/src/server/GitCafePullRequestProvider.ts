@@ -1,3 +1,4 @@
+import { SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -17,11 +18,12 @@ import {
 import * as GitCafeApi from "./GitCafeApi.ts";
 import * as GitCafeHosts from "./gitCafeHosts.ts";
 import * as Json from "./gitCafePullRequestJson.ts";
+import { definition } from "../client/definition.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
   comment: true,
-  actions: ["ready", "draft", "close", "reopen", "merge", "update-branch"],
+  actions: [...definition.changeRequestActions],
   mergeMethods: ["merge", "squash", "rebase"],
   // Only through a stack: GitCafe's one branch update restacks every layer above it.
   updateMethods: ["rebase"],
@@ -42,7 +44,6 @@ const CAPABILITIES: PullRequestCapabilities = {
 };
 
 const PAGE_SIZE = 100;
-/** Conversation pages read before the list is reported as truncated. */
 const MAX_PAGES = 10;
 /** GitCafe's cap on paths per `/diff-files` read, and so one diff page. */
 const DIFF_FILES_BATCH = 64;
@@ -51,7 +52,6 @@ const DIFF_FILES_BATCH = 64;
  * rather than reading every file.
  */
 const LINE_STATS_MAX_FILES = DIFF_FILES_BATCH * 4;
-/** Structural `/changes` pages, 500 files each, read to count a pull request's files. */
 const MAX_CHANGE_PAGES = 20;
 
 const chunk = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>> =>
@@ -59,15 +59,9 @@ const chunk = <A>(items: ReadonlyArray<A>, size: number): Array<ReadonlyArray<A>
     items.slice(index * size, (index + 1) * size),
   );
 
-/** Files whose hunks GitCafe can return; binary and oversized ones are listed as they are. */
 const detailablePaths = (files: ReadonlyArray<Json.GitCafeDiffFile>) =>
   files.filter((file) => !file.binary && !file.tooLarge).map((file) => file.path);
 
-/**
- * A strategy GitCafe lists, the viewer may use, and no blocker names. A blocker without
- * strategies (changes requested, a lock) still leaves Merge offered, so pressing it shows
- * GitCafe's own reason.
- */
 const mergeStrategyOpen = (status: typeof Status.Type, strategy: string) =>
   status.merge.permitted !== false &&
   status.merge.strategies.includes(strategy) &&
@@ -131,13 +125,11 @@ const MergeOutcome = Schema.Struct({
   reason: Schema.optional(Schema.String),
 });
 const StackOutcome = Schema.Struct({ id: Schema.String, state: Schema.String });
-/** Where a stack operation stopped short; anything else is underway or done. */
 const FAILED_STACK_STATES = new Set(["failed", "stopped", "cancelled", "reconciliation_required"]);
 
 type PullRef = ProviderRepositoryRef & { readonly number: number };
 type Paged<A> = { readonly items: ReadonlyArray<A>; readonly next: string | null };
 
-/** The heads a reader saw are still every unmerged layer the action moves. */
 function stackHeadsCurrent(
   stack: Json.GitCafeStack,
   input: { readonly number: number; readonly merge: boolean },
@@ -161,7 +153,6 @@ function stackHeadsCurrent(
   );
 }
 
-/** Lays the detailed files over the structural page, keeping its order and anything omitted. */
 const withDetails = (
   files: ReadonlyArray<Json.GitCafeDiffFile>,
   details: ReadonlyArray<Json.GitCafeDiffFile>,
@@ -176,14 +167,13 @@ export const make = Effect.gen(function* () {
 
   const failure = (operation: string, detail: string, cause?: unknown) =>
     new PullRequestProviderError({
-      provider: "gitcafe",
+      provider: SourceControlProviderKind.make("gitcafe"),
       operation,
       reason: "failed",
       detail,
       ...(cause === undefined ? {} : { cause }),
     });
 
-  /** The repository's API root, refused before anything is sent for a host GitCafe is not on. */
   const repositoryPath = (
     operation: string,
     input: ProviderRepositoryRef,
@@ -207,7 +197,7 @@ export const make = Effect.gen(function* () {
       Effect.mapError(
         (error) =>
           new PullRequestProviderError({
-            provider: "gitcafe",
+            provider: SourceControlProviderKind.make("gitcafe"),
             operation,
             reason: error.reason,
             detail: error.detail,
@@ -240,7 +230,6 @@ export const make = Effect.gen(function* () {
       Effect.flatMap((path) => read(operation, input, { path }, Json.GitCafePullDetail)),
     );
 
-  /** Every page of a cursor list, up to `MAX_PAGES`; `next` stays set when more remained. */
   const readPages = <S extends Schema.Codec<Paged<unknown>, unknown, never, never>>(
     operation: string,
     input: Pick<ProviderRepositoryRef, "host">,
@@ -275,8 +264,8 @@ export const make = Effect.gen(function* () {
     );
 
   /**
-   * The stack a pull request belongs to, with each unmerged layer's head. GitCafe's stack lists no
-   * heads, and they are what a land or restack is fenced on, so each open layer's pull is read.
+   * GitCafe's stack lists no heads, and they are what a land or restack is fenced on, so each
+   * open layer's pull is read.
    */
   const readStack = Effect.fn("GitCafePullRequestProvider.readStack")(function* (
     operation: string,
@@ -305,7 +294,6 @@ export const make = Effect.gen(function* () {
     return { ...stack, members };
   });
 
-  /** One `/diff-files` read, refused if GitCafe answers from another revision than the page. */
   const readDiffFiles = Effect.fn("GitCafePullRequestProvider.readDiffFiles")(function* (
     input: PullRef,
     revision: { readonly version: number; readonly headOid: string; readonly baseOid: string },
@@ -375,11 +363,6 @@ export const make = Effect.gen(function* () {
       return yield* failure(operation, `GitCafe's stack operation ${outcome.state}.`);
   });
 
-  /**
-   * Added and deleted line totals and the file count. `/changes` lists files without counting
-   * lines, so the counts come from batched hunk reads, and a pull request past the cap reports
-   * none rather than paying for every file.
-   */
   const readLineStats = Effect.fn("GitCafePullRequestProvider.readLineStats")(function* (
     input: PullRef,
     version: number,
@@ -407,8 +390,6 @@ export const make = Effect.gen(function* () {
       after = batch.next;
       if (after === null || after === previous || batch.items.length === 0) break;
     }
-    // A hunk read that loses a race with a push leaves the counts at zero rather than dropping
-    // the file count with them.
     const counted =
       files.some((file) => file.additions !== undefined) ||
       files.length > LINE_STATS_MAX_FILES ||
@@ -469,13 +450,12 @@ export const make = Effect.gen(function* () {
       },
       MergeOutcome,
     );
-    // An accepted merge is GitCafe's to finish; the pull request's state reports when it has.
     if (outcome.state === "failed")
       return yield* failure("merge", outcome.reason ?? "GitCafe could not merge the pull request.");
   });
 
   const provider: PullRequestProviderApi = {
-    kind: "gitcafe",
+    kind: SourceControlProviderKind.make("gitcafe"),
     capabilities: CAPABILITIES,
     getViewer: (input) =>
       read(
@@ -511,7 +491,6 @@ export const make = Effect.gen(function* () {
             actorId = options.value.actors.find(
               (actor) => actor.handle.toLowerCase() === input.viewer.toLowerCase(),
             )?.actorId;
-            // A viewer GitCafe knows no actor for has authored and been asked to review nothing.
             if (actorId === undefined) return { items: [], truncated: false, continues: false };
           }
         }
@@ -543,8 +522,6 @@ export const make = Effect.gen(function* () {
         return {
           items: items.slice(0, limit).map((pull) => {
             const item = Json.toChangeRequest(pull, input);
-            // GitCafe filtered by reviewer, so the viewer is one even where the pull omits it. An
-            // unnarrowed listing (no actor to filter by) says nothing about who was asked.
             return input.involvement === "reviewing" && actorId !== undefined
               ? {
                   ...item,
@@ -648,7 +625,6 @@ export const make = Effect.gen(function* () {
             pull.headOid === null
               ? Effect.succeed({ items: [], next: null })
               : readPages(operation, input, `${path}/commits`, Json.GitCafeCommits),
-            // Reactions decorate the conversation; a failed read leaves them out, not it.
             readPages(operation, input, `${path}/reactions/`, Json.GitCafeReactions).pipe(
               Effect.orElseSucceed(() => undefined),
             ),

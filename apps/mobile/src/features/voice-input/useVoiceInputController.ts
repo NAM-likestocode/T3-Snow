@@ -16,7 +16,6 @@ export function useVoiceInputController(input: {
   readonly ownerKey: string | null;
   /** T3-Snow: the environment that transcribes when the Deepgram engine is used. */
   readonly environmentId?: EnvironmentId | null;
-  /** Shown by the global dictation pill when this composer is off screen. */
   readonly label: string;
   readonly readDraftMessage: () => string | null;
   readonly subscribeToDraftChanges: (onChange: () => void) => () => void;

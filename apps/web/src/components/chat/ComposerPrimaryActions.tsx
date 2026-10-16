@@ -29,9 +29,7 @@ interface ComposerPrimaryActionsProps {
   compact: boolean;
   canOperateThread: boolean;
   pendingAction: PendingActionState | null;
-  /** The turn is running: sending steers or queues instead of starting a turn. */
   isRunning: boolean;
-  /** Stop can reach a run, including one still preparing or starting. */
   canInterrupt: boolean;
   followUpBehavior?: "queue" | "steer";
   alternateShortcutLabel?: string | null;
@@ -51,9 +49,7 @@ interface ComposerPrimaryActionsProps {
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
-  /** Tokens a stale session would re-read. When set, a Compact chip shows the count and Enter compacts first. */
   compactBeforeSendTokens?: number | null;
-  /** The Compact chip is turned off, so the next send keeps full history. */
   keepFullHistory?: boolean;
   onToggleKeepFullHistory?: () => void;
 }
@@ -76,8 +72,6 @@ const formatPendingPrimaryActionLabel = (input: {
   return input.questionIndex > 0 ? "Submit answers" : "Submit answer";
 };
 
-// The composer's labeled primary actions (Submit, Refine, Implement) share the send button's
-// message-action pill, so they are composer-owned buttons rather than restyled Buttons.
 const messageActionPillClassName =
   "inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-message-action font-medium text-base text-message-action-foreground shadow-xs shadow-message-action/24 outline-none hover:bg-message-action-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-64 disabled:shadow-none sm:text-sm";
 
@@ -370,7 +364,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
             <button
               type="button"
               className={cn(
-                "flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 [&_svg]:pointer-events-none [&_svg]:size-3.5",
+                "flex h-9 shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-2.5 text-xs tabular-nums outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-64 sm:h-8 [&_svg]:pointer-events-none [&_svg]:size-3.5",
                 keepFullHistory
                   ? "border-border text-muted-foreground hover:text-foreground"
                   : "border-warning/40 text-warning hover:bg-warning/8",

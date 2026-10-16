@@ -119,7 +119,6 @@ interface CollapsedDiffFilesState {
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
 
-/** Collapse control for one file header; re-renders only when its own file changes. */
 function DiffFileCollapseToggle({
   filePath,
   fileKey,
@@ -163,7 +162,6 @@ function DiffFileCollapseToggle({
   );
 }
 
-/** Copy and status controls for one file header; re-renders only when its own file changes. */
 function DiffFileHeaderSuffix({
   filePath,
   hasStat,
@@ -339,7 +337,7 @@ export default function DiffPanel({
     },
     { enabled: isGitRepo && selectedTurn !== undefined },
   );
-  const primaryBranchDiffPreview = useEnvironmentQuery(
+  const branchDiffPreview = useEnvironmentQuery(
     canReadFiles && selectedRunId === null && activeThread && activeCwd
       ? reviewEnvironment.diffPreview({
           environmentId: activeThread.environmentId,
@@ -351,26 +349,6 @@ export default function DiffPanel({
         })
       : null,
   );
-  const shouldRetryBranchDiffAtEnvironmentCwd =
-    selectedRunId === null &&
-    primaryBranchDiffPreview.error?.includes("configured workspace root") === true &&
-    serverConfig?.cwd !== undefined &&
-    serverConfig.cwd !== activeCwd;
-  const fallbackBranchDiffPreview = useEnvironmentQuery(
-    canReadFiles && shouldRetryBranchDiffAtEnvironmentCwd && activeThread && serverConfig
-      ? reviewEnvironment.diffPreview({
-          environmentId: activeThread.environmentId,
-          input: {
-            cwd: serverConfig.cwd,
-            ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
-            ignoreWhitespace: diffIgnoreWhitespace,
-          },
-        })
-      : null,
-  );
-  const branchDiffPreview = shouldRetryBranchDiffAtEnvironmentCwd
-    ? fallbackBranchDiffPreview
-    : primaryBranchDiffPreview;
   const canRefreshGitDiff =
     isGitRepo && selectedRunId === null && activeThread != null && activeCwd != null;
   const activeThreadRefreshKey = routeThreadRef
@@ -562,7 +540,6 @@ export default function DiffPanel({
             filePath: resolveFileDiffPath(fileDiff),
             fileKey,
             fileVersion,
-            // Header-only placeholders use the viewer's collapsed geometry until their patch arrives.
             collapsed:
               collapsedDiffFileKeys.has(fileKey) ||
               fileDiff.cacheKey?.endsWith(":pending") === true,
@@ -733,9 +710,6 @@ export default function DiffPanel({
     if (!routeThreadRef) return;
     useDiffPanelStore.getState().selectBranchBaseRef(routeThreadRef, baseRef);
   };
-  // The scope menu has two radio groups: the top-level one treats the latest
-  // turn as "latest", while the turn sub-menu keys every turn by id so the
-  // latest turn is also marked there.
   const selectedTurnValue = selectedTurn ? `turn:${selectedTurn.runId}` : "";
   const selectedScopeValue =
     selectedRunId === null
@@ -1135,7 +1109,6 @@ export default function DiffPanel({
                         node instanceof HTMLElement && node.hasAttribute("data-title"),
                     );
                     const filePath = title?.textContent;
-                    // The filename remains the explicit "open in editor" affordance.
                     if (filePath) {
                       openDiffFile(filePath);
                       return;

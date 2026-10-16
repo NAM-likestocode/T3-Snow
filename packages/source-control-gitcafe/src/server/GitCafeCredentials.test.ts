@@ -1,18 +1,3 @@
-/**
- * Pins `./GitCafeCredentials.ts`, a service module pass 2 creates:
- *
- * - `class GitCafeCredentials extends Context.Service` keyed
- *   `"@t3tools/source-control-gitcafe/server/GitCafeCredentials"`, with
- *   `get(host) => Effect<GitCafeCredential, GitCafeCredentialUnavailableError>` and
- *   `invalidate(host) => Effect<void>`.
- * - `interface GitCafeCredential { host; token: Redacted<string>; source: "env" | "cafe" }`.
- * - `Schema.TaggedError`s `GitCafeCliMissingError`, `GitCafeNotSignedInError`,
- *   `GitCafeCliFailedError` (union `GitCafeCredentialUnavailableError`).
- * - `environmentToken(host, env): string | null` — `CAFE_TOKEN` only for the host `CAFE_HOST`
- *   names (git.cafe when unset).
- * - `make` / `layer`, yielding `SourceControlHost` (for `process.run`) and
- *   `HostProcess.Environment` / `HostProcess.WorkingDirectory` from `@t3tools/shared/HostProcess`.
- */
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -78,6 +63,42 @@ describe("GitCafeCredentials", () => {
     }).pipe(Effect.provide(layer));
   });
 
+  it.effect("uses a token saved in Settings for git.cafe only, ahead of CAFE_TOKEN", () => {
+    const calls: Array<SourceControlHost.SourceControlProcessInput> = [];
+    const layer = GitCafeCredentials.layer.pipe(
+      Layer.provideMerge(
+        TestSourceControlHost.layer({
+          process: {
+            run: (input) => {
+              calls.push(input);
+              return Effect.succeed(processOutput("password=gct_staging\n"));
+            },
+          },
+        }),
+      ),
+      Layer.provide(Layer.succeed(HostProcess.Environment, { CAFE_TOKEN: "env-token" })),
+      Layer.provide(Layer.succeed(HostProcess.WorkingDirectory, "/server")),
+    );
+    return Effect.gen(function* () {
+      const credentials = yield* GitCafeCredentials.GitCafeCredentials;
+      const settings = yield* TestSourceControlHost.TestSourceControlHostSettings;
+      yield* settings.update({ sourceControlHosts: { gitcafe: { token: "saved-token" } } });
+
+      const saved = yield* credentials.get("git.cafe");
+      assert.strictEqual(Redacted.value(saved.token), "saved-token");
+      assert.strictEqual(saved.source, "settings");
+      assert.deepStrictEqual(yield* credentials.cliEnv("git.cafe"), { CAFE_TOKEN: "saved-token" });
+      assert.deepStrictEqual(yield* credentials.cliEnv("staging.git.cafe"), {});
+      assert.strictEqual(
+        Redacted.value((yield* credentials.get("staging.git.cafe")).token),
+        "gct_staging",
+      );
+
+      yield* settings.update({ sourceControlHosts: { gitcafe: { token: "" } } });
+      assert.strictEqual((yield* credentials.get("git.cafe")).source, "env");
+    }).pipe(Effect.provide(layer));
+  });
+
   it.effect("asks cafe's Git credential helper over stdin and reuses the token", () => {
     const { layer, calls } = harness(() =>
       Effect.succeed(
@@ -86,7 +107,6 @@ describe("GitCafeCredentials", () => {
     );
     return Effect.gen(function* () {
       const credentials = yield* GitCafeCredentials.GitCafeCredentials;
-      // A token for staging is never taken from an environment that targets production.
       const credential = yield* credentials.get("Staging.Git.Cafe");
       assert.strictEqual(Redacted.value(credential.token), "gct_1");
       assert.strictEqual(credential.source, "cafe");
@@ -102,7 +122,6 @@ describe("GitCafeCredentials", () => {
         "get",
       ]);
       assert.strictEqual(calls[0]?.stdin, "protocol=https\nhost=staging.git.cafe\n\n");
-      // A refused token is asked for again rather than reused.
       yield* credentials.invalidate("staging.git.cafe");
       yield* credentials.get("staging.git.cafe");
       assert.strictEqual(calls.length, 2);

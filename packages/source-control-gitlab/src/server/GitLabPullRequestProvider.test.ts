@@ -8,7 +8,6 @@ import { gitLabViewerPermissions, make } from "./GitLabPullRequestProvider.ts";
 describe("gitLabViewerPermissions", () => {
   it("offers everything to a viewer GitLab says can merge", () => {
     expect(gitLabViewerPermissions({ viewerCanMerge: true })).toEqual({
-      // Arming a merge for later and taking the arming back answer to the same `can_merge`.
       actions: [
         "merge",
         "ready",
@@ -22,17 +21,12 @@ describe("gitLabViewerPermissions", () => {
       comment: true,
       resolve: true,
       verdicts: ["comment", "approve"],
-      // GitLab says nothing about who may set a reviewer, and an unreported permission is granted.
       requestReviewers: true,
-      // Rebase and nothing else: GitLab cannot merge a target branch into a source branch, so
-      // offering the choice would be offering something no request could carry out.
       updateMethods: ["rebase"],
     });
   });
 
   it("keeps merge, now and later, from a viewer GitLab says cannot", () => {
-    // `user.can_merge` already accounts for the role, the approval rules and a protected target
-    // branch, so it is the one answer here that does not have to be inferred.
     expect(gitLabViewerPermissions({ viewerCanMerge: false })).toEqual({
       actions: ["ready", "draft", "close", "reopen"],
       comment: true,
@@ -43,15 +37,10 @@ describe("gitLabViewerPermissions", () => {
   });
 
   it("names no way of updating a branch it will not let this viewer update", () => {
-    // The action and the strategy behind it go together: a button offered with nothing to press
-    // it with, or a strategy left standing next to a withheld button, is a half-refusal.
     expect(gitLabViewerPermissions({ viewerCanMerge: false }).updateMethods).toBeUndefined();
   });
 
   it("treats an author with read access as any other reader, which is all GitLab says", () => {
-    // Its REST API names no relationship between the viewer and the merge request beyond
-    // `can_merge`, so the four an author keeps stay offered to everyone rather than being taken
-    // from the one person entitled to them.
     expect(gitLabViewerPermissions({ viewerCanMerge: false }).actions).toEqual([
       "ready",
       "draft",
@@ -144,8 +133,6 @@ describe("getChangeRequest base freshness", () => {
 
   it.effect("says nothing at all where GitLab counted nothing", () =>
     Effect.gen(function* () {
-      // An install too old to answer has to leave the page silent rather than let it claim the
-      // branch is current, which is the one wrong thing this banner could say.
       const changeRequest = yield* readWith({});
 
       expect(changeRequest.baseComparison).toBe("unknown");
@@ -177,7 +164,6 @@ describe("rewriting what has already been said", () => {
         body: "What this changes.",
       });
 
-      // GitLab calls it the description, and the title stays out of the request entirely.
       expect(updateMergeRequest).toHaveBeenCalledWith({
         cwd: "/w",
         repository: "acme/web",
@@ -208,6 +194,72 @@ describe("rewriting what has already been said", () => {
         number: 7,
         noteId: "42",
         body: "Reworded.",
+      });
+    }),
+  );
+});
+
+describe("expanding unchanged lines", () => {
+  const change = {
+    cwd: "/w",
+    repository: "acme/web",
+    host: "gitlab.com",
+    number: 7,
+    changeType: "change" as const,
+    oldPath: "src/page.ts",
+    newPath: "src/page.ts",
+  };
+
+  it.effect("reads both sides of a file through the merge request or one of its commits", () =>
+    Effect.gen(function* () {
+      const getMergeRequestDiffFileContents = vi.fn(() =>
+        Effect.succeed({ oldContents: "before\n", newContents: "after\n" }),
+      );
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+            getMergeRequestDiffFileContents,
+          }),
+        ),
+      );
+      assert.isDefined(provider.getDiffFileContents);
+      const oneCommit = { ...change, commit: "a1b2c3d" };
+
+      expect(yield* provider.getDiffFileContents(change)).toEqual({
+        oldContents: "before\n",
+        newContents: "after\n",
+      });
+      yield* provider.getDiffFileContents(oneCommit);
+      expect(getMergeRequestDiffFileContents).toHaveBeenNthCalledWith(1, change);
+      expect(getMergeRequestDiffFileContents).toHaveBeenNthCalledWith(2, oneCommit);
+    }),
+  );
+
+  it.effect("reports a file GitLab cannot expand as a failed read", () =>
+    Effect.gen(function* () {
+      const provider = yield* make.pipe(
+        Effect.provide(
+          Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+            getMergeRequestDiffFileContents: () =>
+              Effect.fail(
+                new GitLabPullRequestCli.GitLabDiffFileContentsUnavailableError({
+                  command: "glab",
+                  cwd: "/w",
+                  path: "assets/logo.png",
+                  reason: "binary",
+                }),
+              ),
+          }),
+        ),
+      );
+      assert.isDefined(provider.getDiffFileContents);
+
+      expect(yield* Effect.flip(provider.getDiffFileContents(change))).toMatchObject({
+        _tag: "PullRequestProviderError",
+        provider: "gitlab",
+        operation: "getDiffFileContents",
+        reason: "failed",
+        detail: "The diff file 'assets/logo.png' is binary.",
       });
     }),
   );

@@ -258,24 +258,16 @@ export function isCollapsedCursorAdjacentToInlineToken(
 
 export function detectComposerTrigger(text: string, cursorInput: number): ComposerTrigger | null {
   const cursor = clampCursor(text, cursorInput);
-  const lineStart = text.lastIndexOf("\n", Math.max(0, cursor - 1)) + 1;
-  const linePrefix = text.slice(lineStart, cursor);
-
-  if (linePrefix.startsWith("/")) {
-    const commandMatch = /^\/(\S*)$/.exec(linePrefix);
-    if (commandMatch) {
-      const commandQuery = commandMatch[1] ?? "";
-      return {
-        kind: "slash-command",
-        query: commandQuery,
-        rangeStart: lineStart,
-        rangeEnd: cursor,
-      };
-    }
-  }
-
   const tokenStart = tokenStartForCursor(text, cursor);
   const token = text.slice(tokenStart, cursor);
+  if (token.startsWith("/")) {
+    return {
+      kind: "slash-command",
+      query: token.slice(1),
+      rangeStart: tokenStart,
+      rangeEnd: cursor,
+    };
+  }
   const pullRequestMatch = /^#([\p{L}\p{N}][\p{L}\p{N}_-]*)?$/u.exec(token);
   if (pullRequestMatch) {
     return {
@@ -306,7 +298,16 @@ export function detectComposerTrigger(text: string, cursorInput: number): Compos
   };
 }
 
-/** Caret and trigger after replacing composer text and continuing at the end. */
+export function pastedPathQueryLength(
+  lineBefore: string,
+  pasted: string,
+  pathQueryActive = true,
+): number {
+  if (!pathQueryActive) return 0;
+  if (detectComposerTrigger(lineBefore, lineBefore.length)?.kind !== "path") return 0;
+  return /^\S*/.exec(pasted)![0].length;
+}
+
 export function composerStateAtPromptEnd(
   text: string,
   literalText = false,
