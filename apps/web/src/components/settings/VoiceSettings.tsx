@@ -77,14 +77,12 @@ export function VoiceSettings() {
         ? "Downloaded and ready to use offline."
         : `Downloads ${model.sizeLabel} the first time you dictate.`;
 
-  const removeModel = async () => {
+  const removeModel = () => {
     setRemoving(true);
-    try {
-      await deleteDownloadedWhisperModel(model.id);
-    } finally {
+    void deleteDownloadedWhisperModel(model.id).finally(() => {
       setRemoving(false);
       refreshDownloaded();
-    }
+    });
   };
 
   return (

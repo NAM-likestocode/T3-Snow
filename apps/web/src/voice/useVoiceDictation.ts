@@ -69,6 +69,42 @@ export function useVoiceDictation(input: {
     setSendQueued(next);
   };
 
+  // Resolves to the transcript, or to the message to show instead.
+  const transcribe = async (
+    blob: Blob,
+  ): Promise<{ readonly text: string } | { readonly error: string }> => {
+    const options = optionsRef.current;
+    if (options.engine === "deepgram") {
+      if (options.environmentId === null) {
+        return { error: "Connect to an environment to use Deepgram." };
+      }
+      const result = await transcribeInCloud({
+        environmentId: options.environmentId,
+        input: {
+          audioBase64: await blobToBase64(blob),
+          mimeType: blob.type,
+          language: options.language,
+        },
+      });
+      if (result._tag === "Failure") {
+        const error = squashAtomCommandFailure(result);
+        return {
+          error: error instanceof Error && error.message ? error.message : "Transcription failed.",
+        };
+      }
+      const text = result.value.text?.trim();
+      return text
+        ? { text }
+        : { error: result.value.message ?? "Didn't catch anything. Try speaking a little closer." };
+    }
+    const audio = await decodeRecordingForWhisper(blob);
+    if (audio.length === 0 || isSilent(audio)) {
+      return { error: "Didn't catch anything. Check your microphone and try again." };
+    }
+    const text = await transcribeWithWhisper(audio, options);
+    return text ? { text } : { error: "Didn't catch anything. Try speaking a little closer." };
+  };
+
   const finish = async (recording: Recording) => {
     releaseStream(recording);
     recordingRef.current = null;
@@ -77,54 +113,22 @@ export function useVoiceDictation(input: {
       return;
     }
     setPhase("transcribing");
+    // try/catch rather than finally: the React Compiler cannot compile finally.
+    let outcome: { readonly text: string } | { readonly error: string };
     try {
-      const blob = new Blob(recording.chunks, { type: recording.recorder.mimeType });
-      const options = optionsRef.current;
-      if (options.engine === "deepgram") {
-        if (options.environmentId === null) {
-          callbacksRef.current.onError("Connect to an environment to use Deepgram.");
-          return;
-        }
-        const result = await transcribeInCloud({
-          environmentId: options.environmentId,
-          input: {
-            audioBase64: await blobToBase64(blob),
-            mimeType: blob.type,
-            language: options.language,
-          },
-        });
-        if (result._tag === "Failure") {
-          const error = squashAtomCommandFailure(result);
-          callbacksRef.current.onError(
-            error instanceof Error && error.message ? error.message : "Transcription failed.",
-          );
-          return;
-        }
-        const text = result.value.text?.trim();
-        if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
-        else {
-          callbacksRef.current.onError(
-            result.value.message ?? "Didn't catch anything. Try speaking a little closer.",
-          );
-        }
-        return;
-      }
-      const audio = await decodeRecordingForWhisper(blob);
-      if (audio.length === 0 || isSilent(audio)) {
-        callbacksRef.current.onError("Didn't catch anything. Check your microphone and try again.");
-        return;
-      }
-      const text = await transcribeWithWhisper(audio, optionsRef.current);
-      if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
-      else callbacksRef.current.onError("Didn't catch anything. Try speaking a little closer.");
+      outcome = await transcribe(new Blob(recording.chunks, { type: recording.recorder.mimeType }));
     } catch (error) {
-      callbacksRef.current.onError(
-        error instanceof Error && error.message ? error.message : "Transcription failed.",
-      );
-    } finally {
-      setSendAfterTranscript(false);
-      setPhase("idle");
+      outcome = {
+        error: error instanceof Error && error.message ? error.message : "Transcription failed.",
+      };
     }
+    if ("text" in outcome) {
+      callbacksRef.current.onTranscript(outcome.text, { send: sendQueuedRef.current });
+    } else {
+      callbacksRef.current.onError(outcome.error);
+    }
+    setSendAfterTranscript(false);
+    setPhase("idle");
   };
 
   const start = async () => {
