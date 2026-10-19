@@ -761,6 +761,8 @@ export const layer = Layer.effect(
                 }),
               )
             : yield* Effect.exit(
+                // The stored selection only seeds fresh threads. A bound run
+                // follows the thread's current provider, so it passes none.
                 threadManagement.sendToThread({
                   projectId: active.projectId,
                   commandId,
@@ -769,7 +771,6 @@ export const layer = Layer.effect(
                   scheduledTaskId: active.id,
                   text: prompt,
                   attachments: [],
-                  modelSelection: active.modelSelection,
                   mode: "queue",
                   createdBy: active.createdBy,
                   creationSource: active.creationSource,
@@ -1495,7 +1496,11 @@ export const layer = Layer.effect(
               return { _tag: "expired" as const };
             }
 
-            const rendered = renderWebhookPrompt(task.prompt, request);
+            const frameId = yield* crypto.randomBytes(6).pipe(
+              Effect.map((bytes) => Buffer.from(bytes).toString("hex")),
+              Effect.mapError((cause) => taskError("Could not generate frame id.", { cause })),
+            );
+            const rendered = renderWebhookPrompt(task.prompt, request, frameId);
             // Providers trim the prompt before checking, so whitespace around
             // it is free.
             if (rendered.prompt.trim().length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {

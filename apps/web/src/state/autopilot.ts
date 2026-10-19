@@ -8,7 +8,6 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@t3tools/contracts";
-import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useServerConfigs } from "./entities";
@@ -54,8 +53,5 @@ export function useThreadAutopilot(
       : null,
   );
   const threads = query.data?.threads;
-  return useMemo(
-    () => threads?.find((entry) => entry.threadId === threadId) ?? null,
-    [threadId, threads],
-  );
+  return threads?.find((entry) => entry.threadId === threadId) ?? null;
 }

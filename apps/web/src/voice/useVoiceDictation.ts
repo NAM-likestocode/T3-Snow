@@ -1,6 +1,6 @@
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useClientSettings } from "~/hooks/useSettings";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -59,80 +59,75 @@ export function useVoiceDictation(input: {
     optionsRef.current = { modelId, language, engine, environmentId: input.environmentId };
   });
 
-  const setPhase = useCallback((next: VoiceDictationPhase) => {
+  const setPhase = (next: VoiceDictationPhase) => {
     phaseRef.current = next;
     setPhaseState(next);
-  }, []);
+  };
 
-  const setSendAfterTranscript = useCallback((next: boolean) => {
+  const setSendAfterTranscript = (next: boolean) => {
     sendQueuedRef.current = next;
     setSendQueued(next);
-  }, []);
+  };
 
-  const finish = useCallback(
-    async (recording: Recording) => {
-      releaseStream(recording);
-      recordingRef.current = null;
-      if (recording.discard || recording.chunks.length === 0) {
-        setPhase("idle");
-        return;
-      }
-      setPhase("transcribing");
-      try {
-        const blob = new Blob(recording.chunks, { type: recording.recorder.mimeType });
-        const options = optionsRef.current;
-        if (options.engine === "deepgram") {
-          if (options.environmentId === null) {
-            callbacksRef.current.onError("Connect to an environment to use Deepgram.");
-            return;
-          }
-          const result = await transcribeInCloud({
-            environmentId: options.environmentId,
-            input: {
-              audioBase64: await blobToBase64(blob),
-              mimeType: blob.type,
-              language: options.language,
-            },
-          });
-          if (result._tag === "Failure") {
-            const error = squashAtomCommandFailure(result);
-            callbacksRef.current.onError(
-              error instanceof Error && error.message ? error.message : "Transcription failed.",
-            );
-            return;
-          }
-          const text = result.value.text?.trim();
-          if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
-          else {
-            callbacksRef.current.onError(
-              result.value.message ?? "Didn't catch anything. Try speaking a little closer.",
-            );
-          }
+  const finish = async (recording: Recording) => {
+    releaseStream(recording);
+    recordingRef.current = null;
+    if (recording.discard || recording.chunks.length === 0) {
+      setPhase("idle");
+      return;
+    }
+    setPhase("transcribing");
+    try {
+      const blob = new Blob(recording.chunks, { type: recording.recorder.mimeType });
+      const options = optionsRef.current;
+      if (options.engine === "deepgram") {
+        if (options.environmentId === null) {
+          callbacksRef.current.onError("Connect to an environment to use Deepgram.");
           return;
         }
-        const audio = await decodeRecordingForWhisper(blob);
-        if (audio.length === 0 || isSilent(audio)) {
+        const result = await transcribeInCloud({
+          environmentId: options.environmentId,
+          input: {
+            audioBase64: await blobToBase64(blob),
+            mimeType: blob.type,
+            language: options.language,
+          },
+        });
+        if (result._tag === "Failure") {
+          const error = squashAtomCommandFailure(result);
           callbacksRef.current.onError(
-            "Didn't catch anything. Check your microphone and try again.",
+            error instanceof Error && error.message ? error.message : "Transcription failed.",
           );
           return;
         }
-        const text = await transcribeWithWhisper(audio, optionsRef.current);
+        const text = result.value.text?.trim();
         if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
-        else callbacksRef.current.onError("Didn't catch anything. Try speaking a little closer.");
-      } catch (error) {
-        callbacksRef.current.onError(
-          error instanceof Error && error.message ? error.message : "Transcription failed.",
-        );
-      } finally {
-        setSendAfterTranscript(false);
-        setPhase("idle");
+        else {
+          callbacksRef.current.onError(
+            result.value.message ?? "Didn't catch anything. Try speaking a little closer.",
+          );
+        }
+        return;
       }
-    },
-    [setPhase, setSendAfterTranscript],
-  );
+      const audio = await decodeRecordingForWhisper(blob);
+      if (audio.length === 0 || isSilent(audio)) {
+        callbacksRef.current.onError("Didn't catch anything. Check your microphone and try again.");
+        return;
+      }
+      const text = await transcribeWithWhisper(audio, optionsRef.current);
+      if (text) callbacksRef.current.onTranscript(text, { send: sendQueuedRef.current });
+      else callbacksRef.current.onError("Didn't catch anything. Try speaking a little closer.");
+    } catch (error) {
+      callbacksRef.current.onError(
+        error instanceof Error && error.message ? error.message : "Transcription failed.",
+      );
+    } finally {
+      setSendAfterTranscript(false);
+      setPhase("idle");
+    }
+  };
 
-  const start = useCallback(async () => {
+  const start = async () => {
     if (phaseRef.current !== "idle") return;
     setSendAfterTranscript(false);
     setPhase("starting");
@@ -178,22 +173,22 @@ export function useVoiceDictation(input: {
     recordingRef.current = recording;
     setElapsedMs(0);
     setPhase("recording");
-  }, [finish, setPhase, setSendAfterTranscript]);
+  };
 
-  const stop = useCallback(() => {
+  const stop = () => {
     const recording = recordingRef.current;
     if (!recording || recording.recorder.state === "inactive") return;
     recording.recorder.stop();
-  }, []);
+  };
 
   /** Stops recording (if still running) and sends the message once transcribed. */
-  const stopAndSend = useCallback(() => {
+  const stopAndSend = () => {
     if (phaseRef.current !== "recording" && phaseRef.current !== "transcribing") return;
     setSendAfterTranscript(true);
     stop();
-  }, [setSendAfterTranscript, stop]);
+  };
 
-  const cancel = useCallback(() => {
+  const cancel = () => {
     const recording = recordingRef.current;
     if (!recording) return;
     setSendAfterTranscript(false);
@@ -205,12 +200,12 @@ export function useVoiceDictation(input: {
     } else {
       recording.recorder.stop();
     }
-  }, [setPhase, setSendAfterTranscript]);
+  };
 
-  const toggle = useCallback(() => {
+  const toggle = () => {
     if (phaseRef.current === "idle") void start();
     else if (phaseRef.current === "recording") stop();
-  }, [start, stop]);
+  };
 
   // Tick the visible timer and enforce the length cap only while recording.
   useEffect(() => {

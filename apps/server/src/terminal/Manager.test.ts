@@ -28,13 +28,15 @@ import * as PlatformError from "effect/PlatformError";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SynchronizedRef from "effect/SynchronizedRef";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
-import { expect } from "vite-plus/test";
+import { expect, vi } from "vite-plus/test";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
@@ -43,6 +45,11 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as TerminalManager from "./Manager.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
+
+vi.mock("effect/SynchronizedRef", async (importOriginal) => {
+  const original = await importOriginal<typeof SynchronizedRef>();
+  return { ...original, make: vi.fn(original.make) };
+});
 
 const encodeUnknownJson = Schema.encodeUnknownSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -61,6 +68,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   killed = false;
   exitOnSubscribe: PtyAdapter.PtyExitEvent | undefined;
+  onKill: ((signal?: string) => void) | undefined;
 
   constructor(pid: number) {
     this.pid = pid;
@@ -83,6 +91,7 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
   kill(signal?: string): void {
     this.killed = true;
     this.killSignals.push(signal);
+    this.onKill?.(signal);
   }
 
   onData(callback: (data: string) => void): () => void {
@@ -104,6 +113,10 @@ class FakePtyProcess implements PtyAdapter.PtyProcess {
     for (const listener of this.dataListeners) {
       listener(data);
     }
+  }
+
+  get exitListenerCount(): number {
+    return this.exitListeners.size;
   }
 
   emitExit(event: PtyAdapter.PtyExitEvent): void {
@@ -485,6 +498,109 @@ it.layer(
         events.filter((event) => event.type === "snapshot").map((event) => event.snapshot.status),
       ).toEqual(["running", "running"]);
       expect(ptyAdapter.spawnInputs).toHaveLength(2);
+    }),
+  );
+
+  it.effect("resumed attaches after close never respawn until the terminal is reopened", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput(), restartIfNotRunning: true, resume: true },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual(["closed"]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+
+      yield* manager.open(openInput());
+      const events = yield* Ref.get(attachEvents);
+      expect(events.map((event) => event.type)).toEqual(["closed", "snapshot"]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+    }),
+  );
+
+  it.effect("resumed attaches respect closes before this server has seen a terminal", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.close({ threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID });
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput(), restartIfNotRunning: true, resume: true },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual(["closed"]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(0);
+
+      const restarted = yield* manager.restart(restartInput());
+      expect(restarted.status).toBe("running");
+      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual([
+        "closed",
+        "restarted",
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+    }),
+  );
+
+  it.effect("resumed attaches leave exited and evicted terminals stopped", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        maxRetainedInactiveSessions: 1,
+      });
+      const exited = yield* Deferred.make<void>();
+      const unsubscribeEvents = yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeEvents));
+      yield* manager.open(openInput());
+      ptyAdapter.processes[0]?.emitExit({ exitCode: 0, signal: 0 });
+      yield* Deferred.await(exited);
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput(), restartIfNotRunning: true, resume: true },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect(yield* Ref.get(attachEvents)).toEqual([
+        { type: "snapshot", snapshot: expect.objectContaining({ status: "exited" }) },
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+
+      // Opening another terminal completes eviction before the next resumed attach.
+      yield* manager.open(openInput({ threadId: "thread-2" }));
+      const unsubscribeEvicted = yield* manager.attachStream(
+        { ...openInput(), restartIfNotRunning: true, resume: true },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeEvicted));
+      expect((yield* Ref.get(attachEvents)).map((event) => event.type)).toEqual([
+        "snapshot",
+        "closed",
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+    }),
+  );
+
+  it.effect("resumed attaches recreate terminals this server has never seen", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream({ ...openInput(), resume: true }, (event) =>
+        Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect(yield* Ref.get(attachEvents)).toEqual([
+        { type: "snapshot", snapshot: expect.objectContaining({ status: "running" }) },
+      ]);
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
     }),
   );
 
@@ -1792,6 +1908,94 @@ it.layer(
     }).pipe(Effect.provide(TestClock.layer())),
   );
 
+  it.effect("skips SIGKILL when the process exits during the grace period", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager(5, { processKillGraceMs: 10_000 });
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      process.emitExit({ exitCode: 0, signal: 15 });
+      yield* TestClock.adjust("10 seconds");
+
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("does not retain a kill fiber that finishes before registration", () =>
+    Effect.gen(function* () {
+      let managerState:
+        | SynchronizedRef.SynchronizedRef<{
+            killFibers: Map<PtyAdapter.PtyProcess, Fiber.Fiber<void, never>>;
+          }>
+        | undefined;
+      const originalMake = <A>(value: A) => Effect.sync(() => SynchronizedRef.makeUnsafe(value));
+      const makeSpy = vi.spyOn(SynchronizedRef, "make").mockImplementation((value) =>
+        originalMake(value).pipe(
+          Effect.map((ref) => {
+            if (typeof value === "object" && value !== null && "killFibers" in value) {
+              managerState = ref as typeof managerState;
+            }
+            return ref;
+          }),
+        ),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(() => makeSpy.mockRestore()));
+      for (const budget of [10, 15, 20, 25, 30, 40, 50, 75, 100, 150, 200, 500]) {
+        const { manager, ptyAdapter } = yield* createManager();
+        yield* manager.open(openInput());
+        const process = ptyAdapter.processes[0]!;
+        process.onKill = () => process.emitExit({ exitCode: 0, signal: 15 });
+        // Vary the caller's operation budget to cover child completion before
+        // and after the parent resumes its registration step.
+        yield* manager
+          .close({ threadId: "thread-1" })
+          .pipe(Effect.provideService(References.MaxOpsBeforeYield, budget));
+        yield* Effect.yieldNow;
+        expect(managerState).toBeDefined();
+        yield* Fiber.awaitAll(SynchronizedRef.getUnsafe(managerState!).killFibers.values());
+        expect(SynchronizedRef.getUnsafe(managerState!).killFibers.size, `budget ${budget}`).toBe(
+          0,
+        );
+        expect(process.killSignals).toEqual(["SIGTERM"]);
+      }
+    }),
+  );
+
+  it.effect("releases the exit listener when kill escalation is interrupted", () =>
+    Effect.gen(function* () {
+      const scope = yield* Scope.make("sequential");
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        processKillGraceMs: 10_000,
+      }).pipe(Effect.provideService(Scope.Scope, scope));
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      const sigterm = yield* Deferred.make<void>();
+      process.onKill = (signal) => {
+        if (signal === "SIGTERM") Deferred.doneUnsafe(sigterm, Effect.void);
+      };
+      yield* manager.close({ threadId: "thread-1" });
+      yield* Deferred.await(sigterm);
+      assert.isAbove(process.exitListenerCount, 0);
+
+      yield* Scope.close(scope, Exit.void);
+
+      assert.equal(process.exitListenerCount, 0);
+      assert.deepEqual(process.killSignals, ["SIGTERM"]);
+    }).pipe(Effect.provide(TestClock.layer())),
+  );
+
   it.effect("publishes closed events when terminals are explicitly closed", () =>
     Effect.gen(function* () {
       const { manager, getEvents } = yield* createManager();
@@ -2044,6 +2248,79 @@ it.layer(
       }),
   );
 
+  it.effect("turns off fish terminal queries unless the user chose query-term", () =>
+    Effect.gen(function* () {
+      for (const [platform, env, runtimeEnv, expected] of [
+        ["linux", {}, {}, { fish_features: "no-query-term" }],
+        [
+          "linux",
+          { fish_features: "qmark-noglob" },
+          {},
+          { fish_features: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "linux",
+          { fish_features: "qmark-noglob,query-term" },
+          {},
+          { fish_features: "qmark-noglob,query-term" },
+        ],
+        [
+          "linux",
+          { fish_features: "qmark-noglob,no-query-term" },
+          {},
+          { fish_features: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "linux",
+          { fish_features: "query-term" },
+          { fish_features: "qmark-noglob" },
+          { fish_features: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "win32",
+          { FISH_FEATURES: "qmark-noglob" },
+          {},
+          { FISH_FEATURES: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "win32",
+          { Fish_Features: "qmark-noglob,query-term" },
+          {},
+          { Fish_Features: "qmark-noglob,query-term" },
+        ],
+        [
+          "win32",
+          { FISH_FEATURES: "qmark-noglob,no-query-term" },
+          {},
+          { FISH_FEATURES: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "win32",
+          { Fish_Features: "query-term" },
+          { fish_features: "qmark-noglob" },
+          { Fish_Features: "qmark-noglob,no-query-term" },
+        ],
+        [
+          "win32",
+          { FISH_FEATURES: "no-query-term" },
+          { fish_features: "qmark-noglob,query-term" },
+          { FISH_FEATURES: "qmark-noglob,query-term" },
+        ],
+      ] as const) {
+        const { manager, ptyAdapter } = yield* createManager(5, {
+          env,
+        }).pipe(Effect.provide(layerWithHostPlatform(platform)));
+        yield* manager.open(openInput({ env: runtimeEnv }));
+        const fishFeatures = Object.fromEntries(
+          Object.entries(ptyAdapter.spawnInputs[0]!.env).filter(
+            ([key]) => key.toLowerCase() === "fish_features",
+          ),
+        );
+        expect.soft(fishFeatures, JSON.stringify({ platform, env, runtimeEnv })).toEqual(expected);
+      }
+    }),
+  );
+
   it.effect("filters app runtime env variables from terminal sessions", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager(5, {
@@ -2052,9 +2329,14 @@ it.layer(
           T3CODE_PORT: "3773",
           VITE_DEV_SERVER_URL: "http://localhost:5173",
           TEST_TERMINAL_KEEP: "keep-me",
+          TMUX: "/tmp/tmux-1000/default,1234,0",
+          TMUX_PANE: "%3",
+          ZELLIJ_SESSION_NAME: "work",
+          ZELLIJ_CONFIG_DIR: "/home/user/.config/zellij",
         },
       });
       yield* manager.open(openInput());
+      yield* manager.open(openInput({ terminalId: "explicit", env: { TMUX_PANE: "%9" } }));
       const spawnInput = ptyAdapter.spawnInputs[0];
       expect(spawnInput).toBeDefined();
       if (!spawnInput) return;
@@ -2063,6 +2345,11 @@ it.layer(
       expect(spawnInput.env.T3CODE_PORT).toBeUndefined();
       expect(spawnInput.env.VITE_DEV_SERVER_URL).toBeUndefined();
       expect(spawnInput.env.TEST_TERMINAL_KEEP).toBe("keep-me");
+      expect(spawnInput.env.TMUX).toBeUndefined();
+      expect(spawnInput.env.TMUX_PANE).toBeUndefined();
+      expect(spawnInput.env.ZELLIJ_SESSION_NAME).toBeUndefined();
+      expect(spawnInput.env.ZELLIJ_CONFIG_DIR).toBe("/home/user/.config/zellij");
+      expect(ptyAdapter.spawnInputs[1]?.env.TMUX_PANE).toBe("%9");
     }),
   );
 

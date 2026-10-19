@@ -201,14 +201,38 @@ describe("getDesktopUpdateActionError", () => {
 
 describe("desktop update UI helpers", () => {
   it("builds the stable release URL for a downloaded version", () => {
-    expect(getDesktopUpdateReleaseUrl("0.0.30")).toBe(
-      "https://github.com/NAM-likestocode/T3-Snow/releases/tag/v0.0.30",
+    expect(getDesktopUpdateReleaseUrl("0.0.30", "pingdotgg/t3code")).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30",
+    );
+  });
+
+  it("uses the configured desktop update repository for release URLs", () => {
+    expect(getDesktopUpdateReleaseUrl("1.2.3", "JustYannicc/t3code")).toBe(
+      "https://github.com/JustYannicc/t3code/releases/tag/v1.2.3",
+    );
+    expect(getDesktopUpdateReleaseHistoryUrl("JustYannicc/t3code")).toBe(
+      "https://github.com/JustYannicc/t3code/releases",
+    );
+  });
+
+  it.each([
+    "owner/repo/extra",
+    "owner#notes/repo",
+    "owner/repo#notes",
+    "owner?tab=notes/repo",
+    "owner/repo?tab=notes",
+  ])("falls back to upstream for an invalid configured repository: %s", (repository) => {
+    expect(getDesktopUpdateReleaseHistoryUrl(repository)).toBe(
+      "https://github.com/pingdotgg/t3code/releases",
+    );
+    expect(getDesktopUpdateReleaseUrl("1.2.3", repository)).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v1.2.3",
     );
   });
 
   it("builds the nightly release URL without dropping its version suffix", () => {
-    expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931")).toBe(
-      "https://github.com/NAM-likestocode/T3-Snow/releases/tag/v0.0.30-nightly.20260728.931",
+    expect(getDesktopUpdateReleaseUrl("0.0.30-nightly.20260728.931", "pingdotgg/t3code")).toBe(
+      "https://github.com/pingdotgg/t3code/releases/tag/v0.0.30-nightly.20260728.931",
     );
   });
 
@@ -218,8 +242,8 @@ describe("desktop update UI helpers", () => {
   });
 
   it("builds the release history URL", () => {
-    expect(getDesktopUpdateReleaseHistoryUrl()).toBe(
-      "https://github.com/NAM-likestocode/T3-Snow/releases",
+    expect(getDesktopUpdateReleaseHistoryUrl("pingdotgg/t3code")).toBe(
+      "https://github.com/pingdotgg/t3code/releases",
     );
   });
 
