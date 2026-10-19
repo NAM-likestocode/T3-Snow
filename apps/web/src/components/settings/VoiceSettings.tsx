@@ -1,9 +1,9 @@
 import { useAtomValue } from "@effect/atom-react";
 import { DEFAULT_CLIENT_SETTINGS, VOICE_MODEL_IDS, type VoiceModelId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { shortcutLabelForCommand } from "../../keybindings";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import {
@@ -42,7 +42,6 @@ const isVoiceModelId = (value: unknown): value is VoiceModelId =>
 /** Settings → Voice (T3-Snow). Everything here is device-local. */
 export function VoiceSettings() {
   const settings = useClientSettings();
-  const updateSettings = useUpdateClientSettings();
   const navigate = useNavigate();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -54,11 +53,15 @@ export function VoiceSettings() {
   const [downloaded, setDownloaded] = useState<ReadonlySet<VoiceModelId>>(new Set());
   const [removing, setRemoving] = useState(false);
 
-  const refreshDownloaded = useCallback(() => {
+  const refreshDownloaded = () => {
     void listDownloadedWhisperModels().then(setDownloaded);
-  }, []);
-  // Re-read the cache whenever the selected model finishes loading.
-  useEffect(refreshDownloaded, [refreshDownloaded, status?.state]);
+  };
+  // Re-read the cache on open and whenever the selected model stops downloading.
+  const modelDownloading = status?.state === "downloading";
+  useEffect(() => {
+    if (modelDownloading) return;
+    void listDownloadedWhisperModels().then(setDownloaded);
+  }, [modelDownloading]);
 
   const shortcutLabel = shortcutLabelForCommand(keybindings, "composer.voice", {
     context: { terminalFocus: false, terminalOpen: false, modelPickerOpen: false },
@@ -74,14 +77,12 @@ export function VoiceSettings() {
         ? "Downloaded and ready to use offline."
         : `Downloads ${model.sizeLabel} the first time you dictate.`;
 
-  const removeModel = async () => {
+  const removeModel = () => {
     setRemoving(true);
-    try {
-      await deleteDownloadedWhisperModel(model.id);
-    } finally {
+    void deleteDownloadedWhisperModel(model.id).finally(() => {
       setRemoving(false);
       refreshDownloaded();
-    }
+    });
   };
 
   return (
@@ -102,7 +103,7 @@ export function VoiceSettings() {
                 <SettingResetButton
                   label="voice dictation"
                   onClick={() =>
-                    updateSettings({
+                    updateClientSettings({
                       voiceDictationEnabled: DEFAULT_CLIENT_SETTINGS.voiceDictationEnabled,
                     })
                   }
@@ -114,7 +115,7 @@ export function VoiceSettings() {
                 checked={settings.voiceDictationEnabled}
                 disabled={!supported}
                 onCheckedChange={(checked) =>
-                  updateSettings({ voiceDictationEnabled: Boolean(checked) })
+                  updateClientSettings({ voiceDictationEnabled: Boolean(checked) })
                 }
                 aria-label="Voice dictation"
               />
@@ -129,7 +130,7 @@ export function VoiceSettings() {
                   value={engine}
                   onValueChange={(value) => {
                     if (value === "local" || value === "deepgram") {
-                      updateSettings({ voiceEngine: value });
+                      updateClientSettings({ voiceEngine: value });
                     }
                   }}
                 >
@@ -167,7 +168,7 @@ export function VoiceSettings() {
                       <SettingResetButton
                         label="Whisper model"
                         onClick={() =>
-                          updateSettings({ voiceModel: DEFAULT_CLIENT_SETTINGS.voiceModel })
+                          updateClientSettings({ voiceModel: DEFAULT_CLIENT_SETTINGS.voiceModel })
                         }
                       />
                     ) : null
@@ -196,7 +197,7 @@ export function VoiceSettings() {
                       <Select
                         value={settings.voiceModel}
                         onValueChange={(value) => {
-                          if (isVoiceModelId(value)) updateSettings({ voiceModel: value });
+                          if (isVoiceModelId(value)) updateClientSettings({ voiceModel: value });
                         }}
                       >
                         <SelectTrigger
@@ -231,7 +232,8 @@ export function VoiceSettings() {
                     <Select
                       value={settings.voiceLanguage}
                       onValueChange={(value) => {
-                        if (typeof value === "string") updateSettings({ voiceLanguage: value });
+                        if (typeof value === "string")
+                          updateClientSettings({ voiceLanguage: value });
                       }}
                     >
                       <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Language">

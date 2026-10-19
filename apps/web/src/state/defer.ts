@@ -8,7 +8,6 @@ import {
   type EnvironmentId,
   type ThreadId,
 } from "@t3tools/contracts";
-import { useMemo } from "react";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { useServerConfigs } from "./entities";
@@ -46,11 +45,7 @@ export function useThreadDeferTriggers(
       : null,
   );
   const triggers = query.data?.triggers;
-  return useMemo(
-    () =>
-      threadId === null || !triggers
-        ? NO_TRIGGERS
-        : triggers.filter((trigger) => trigger.threadId === threadId),
-    [threadId, triggers],
-  );
+  return threadId === null || !triggers
+    ? NO_TRIGGERS
+    : triggers.filter((trigger) => trigger.threadId === threadId);
 }

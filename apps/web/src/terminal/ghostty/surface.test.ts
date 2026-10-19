@@ -777,6 +777,55 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(readText).not.toHaveBeenCalled();
   });
 
+  function paste(surface: GhosttyTerminalSurface, text: string) {
+    surface.input.dispatchEvent(
+      Object.assign(new Event("paste", { cancelable: true }), {
+        clipboardData: { getData: () => text },
+      }),
+    );
+  }
+
+  it.each(["native", "clipboard"])("pastes once when %s arrives first", async (first) => {
+    const harness = createHarness();
+    const read = Promise.resolve("echo hi");
+    vi.stubGlobal("navigator", {
+      platform: "MacIntel",
+      clipboard: { readText: () => read },
+    });
+    const surface = await harness.create({ beforeKey: () => true });
+
+    key(surface, "v", "KeyV", { metaKey: true });
+    if (first === "native") paste(surface, "echo hi");
+    await read;
+    if (first === "clipboard") paste(surface, "echo hi");
+
+    expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
+  });
+
+  it.each(["V keyup", "blur", "Meta keyup without V keyup"])(
+    "accepts a later identical menu paste after %s",
+    async (end) => {
+      const harness = createHarness();
+      const read = Promise.resolve("echo hi");
+      vi.stubGlobal("navigator", {
+        platform: "MacIntel",
+        clipboard: { readText: () => read },
+      });
+      const surface = await harness.create({ beforeKey: () => true });
+
+      key(surface, "v", "KeyV", { metaKey: true });
+      await read;
+      expect(harness.onData.mock.calls).toEqual([["echo hi"]]);
+      if (end === "blur") surface.input.dispatchEvent(new Event("blur"));
+      else if (end === "V keyup") key(surface, "v", "KeyV", { metaKey: true }, "keyup");
+      // macOS can omit V keyup while Command is held.
+      else key(surface, "Meta", "MetaLeft", {}, "keyup");
+      paste(surface, "echo hi");
+
+      expect(harness.onData.mock.calls).toEqual([["echo hi"], ["echo hi"]]);
+    },
+  );
+
   it("starts a selection when dragging from a link", async () => {
     const harness = createHarness();
     const onLinkActivate = vi.fn();
@@ -1004,6 +1053,25 @@ describe("shouldBlinkTerminalCursor", () => {
 });
 
 describe("terminalLinkAtPositionWithRange", () => {
+  it("activates a wrapped quoted Windows path from its spaces and position suffix", () => {
+    const row = (text: string, isWrapContinuation: boolean): GhosttyRow => ({
+      cells: Array.from(text, (character) => cell(character)),
+      text,
+      isWrapContinuation,
+      wrapsToNext: false,
+    });
+    const first = String.raw`"C:\Users\Jane `;
+    const second = String.raw`Doe\index.ts":12:7`;
+    const rows = [row(first, false), row(second, true)];
+    const expected = {
+      text: String.raw`C:\Users\Jane Doe\index.ts:12:7`,
+      range: { start: { x: 1, y: 0 }, end: { x: second.length - 1, y: 1 } },
+    };
+    expect(terminalLinkAtPositionWithRange(rows, 0, first.length - 1)).toEqual(expected);
+    expect(terminalLinkAtPositionWithRange(rows, 1, second.length - 1)).toEqual(expected);
+    expect(terminalLinkAtPositionWithRange(rows, 0, 0)).toBeNull();
+  });
+
   it("maps terminal cells to UTF-16 offsets after a wide emoji", () => {
     const cells = [
       cell("🙂"),
@@ -1370,7 +1438,7 @@ describe("terminal font resolution", () => {
   });
 
   it("ignores proportional families the cell grid cannot lay out", () => {
-    // jsdom has no canvas metrics, so the probe answers "monospace" and the
+    // Node has no canvas, so the probe answers "monospace" and the
     // family is kept; the guard is exercised in the browser instead.
     const stack = terminalFontFamily("Helvetica Neue");
     expect(stack.endsWith("monospace")).toBe(true);
