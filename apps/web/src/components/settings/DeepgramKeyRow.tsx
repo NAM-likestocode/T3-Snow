@@ -21,6 +21,7 @@ export function DeepgramKeyRow({ environmentId }: { environmentId: EnvironmentId
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads whether the environment has a Deepgram key, an external server read
   useEffect(() => {
     let cancelled = false;
     void loadStatus({ environmentId, input: {} }).then((result) => {

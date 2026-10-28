@@ -50,8 +50,7 @@ export const RelayDeviceRegistrationRequest = Schema.Struct({
   iosMajorVersion: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(18))),
   androidApiLevel: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(24))),
   appVersion: Schema.optional(TrimmedNonEmptyString),
-  // APNs routing for this install: the topic must match the app's bundle id (dev/preview/prod
-  // variants differ) and development-signed builds receive sandbox tokens.
+  // APNs topic must match the variant's bundle id; development-signed builds use sandbox tokens.
   bundleId: Schema.optional(TrimmedNonEmptyString),
   apsEnvironment: Schema.optional(RelayApnsEnvironment),
   pushToken: Schema.optional(TrimmedNonEmptyString),
@@ -267,7 +266,6 @@ export const RelayAgentActivityPublishProofPayload = Schema.Struct({
 });
 export type RelayAgentActivityPublishProofPayload =
   typeof RelayAgentActivityPublishProofPayload.Type;
-export type RelayAgentActivityPublishProof = string;
 
 export const RelayAgentActivityPublishRequest = Schema.Struct({
   state: Schema.NullOr(RelayAgentActivityState).annotate({
@@ -380,6 +378,24 @@ export const RelayEnvironmentEndpointUnavailableReason = Schema.Literals([
 export type RelayEnvironmentEndpointUnavailableReason =
   typeof RelayEnvironmentEndpointUnavailableReason.Type;
 
+/**
+ * Which part of the path from the relay to the environment failed. `tunnel_down`
+ * means Cloudflare has no live connector for the tunnel; `origin_unreachable`
+ * means the tunnel answered but T3 Code behind it did not. Optional on the wire
+ * so old relays and old clients keep working.
+ */
+export const RelayEnvironmentEndpointFailure = Schema.Literals([
+  "tunnel_down",
+  "origin_unreachable",
+  "dns",
+  "tls",
+  "refused",
+  "timeout",
+  "invalid_response",
+  "unknown",
+]);
+export type RelayEnvironmentEndpointFailure = typeof RelayEnvironmentEndpointFailure.Type;
+
 export const RelayAgentActivityPublishProofInvalidReason = Schema.Literals([
   "invalid_signature_or_payload",
   "replayed_nonce",
@@ -482,6 +498,8 @@ export class RelayEnvironmentEndpointUnavailableError extends Schema.TaggedError
   {
     code: Schema.Literal("environment_endpoint_unavailable"),
     reason: RelayEnvironmentEndpointUnavailableReason,
+    endpointFailure: Schema.optionalKey(RelayEnvironmentEndpointFailure),
+    endpointStatus: Schema.optionalKey(Schema.Number),
     traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 502 },
@@ -523,6 +541,7 @@ export class RelayEnvironmentLinkUnavailableError extends Schema.TaggedError<Rel
   {
     code: Schema.Literal("environment_link_unavailable"),
     reason: RelayEnvironmentLinkUnavailableReason,
+    provisioningStage: Schema.optionalKey(TrimmedNonEmptyString),
     traceId: TrimmedNonEmptyString,
   },
   { httpApiStatus: 503 },
@@ -828,6 +847,8 @@ export const RelayEnvironmentStatusResponse = Schema.Struct({
   checkedAt: TrimmedNonEmptyString,
   descriptor: Schema.optional(ExecutionEnvironmentDescriptor),
   error: Schema.optional(TrimmedNonEmptyString),
+  endpointFailure: Schema.optional(RelayEnvironmentEndpointFailure),
+  endpointStatus: Schema.optional(Schema.Number),
   offlineReason: Schema.optional(RelayEnvironmentOfflineReason),
   traceId: Schema.optional(TrimmedNonEmptyString),
 });
@@ -863,12 +884,7 @@ export const RelayCloudEnvironmentHealthProofPayload = Schema.Struct({
 export type RelayCloudEnvironmentHealthProofPayload =
   typeof RelayCloudEnvironmentHealthProofPayload.Type;
 
-/**
- * Sent with every webhook the relay forwards, signed with the relay's mint key
- * (`x-t3-relay-delivery`). The environment trusts the relay's delivery id,
- * receive time and trace context only when this verifies, since its webhook
- * URL can also be called directly.
- */
+/** Verify x-t3-relay-delivery with the relay mint key before trusting delivery id, time, or trace context. */
 export const RelayHookDeliveryProofPayload = Schema.Struct({
   ...RelaySignedJwtRegisteredClaims,
   environmentId: EnvironmentId,
@@ -1215,14 +1231,8 @@ const RelayServerGroup = HttpApiGroup.make("server")
   .annotate(OpenApi.Description, "Environment-authenticated activity publication.")
   .middleware(RelayEnvironmentAuth);
 
-/**
- * Public, stateless webhook forwarding to an environment's managed tunnel.
- * Unauthenticated: the token in the path is the environment's credential, and
- * the relay only routes and forwards. Raw, so the body reaches the
- * environment byte for byte and signatures still verify there. `endpointKey`
- * names one managed endpoint (its tunnel's hash of user and environment), not
- * the environment id, which any account can link.
- */
+// Path token authenticates; forward raw bytes for signature verification.
+// endpointKey is the managed endpoint hash, not the account-linkable environment id.
 const RelayHookParams = Schema.Struct({
   endpointKey: Schema.String,
   hookId: Schema.String,
@@ -1239,6 +1249,22 @@ const RelayHooksGroup = HttpApiGroup.make("hooks")
   )
   .annotate(OpenApi.Description, "Forward webhook requests to an environment.");
 
+export const RelayMobileTelemetrySignal = Schema.Literals(["logs", "metrics", "traces"]);
+export type RelayMobileTelemetrySignal = typeof RelayMobileTelemetrySignal.Type;
+
+// expo-observe appends `<easProjectId>/v1/<signal>` to its endpoint URL and cannot send credentials.
+const RelayMobileTelemetryParams = Schema.Struct({
+  projectId: Schema.String.check(Schema.isGUID()),
+  signal: RelayMobileTelemetrySignal,
+});
+const RelayMobileTelemetryGroup = HttpApiGroup.make("mobileTelemetry")
+  .add(
+    HttpApiEndpoint.post("ingest", "/v1/mobile/observe/:projectId/v1/:signal", {
+      params: RelayMobileTelemetryParams,
+    }),
+  )
+  .annotate(OpenApi.Description, "Receive mobile app telemetry from expo-observe.");
+
 export const RelayApi = HttpApi.make("RelayApi")
   .add(
     RelayHealthGroup,
@@ -1249,6 +1275,7 @@ export const RelayApi = HttpApi.make("RelayApi")
     RelayDpopClientGroup,
     RelayServerGroup,
     RelayHooksGroup,
+    RelayMobileTelemetryGroup,
   )
   .annotate(OpenApi.Title, "T3 Code Relay API")
   .annotate(OpenApi.Version, "1.0.0")

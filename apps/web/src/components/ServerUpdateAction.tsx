@@ -22,7 +22,6 @@ import { type ComponentProps, useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment, updateOutdatedServer } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -52,9 +51,7 @@ export interface ServerUpdateTarget {
   readonly selfUpdate: ServerSelfUpdateCapability | null;
   readonly installation?: ServerInstallation | undefined;
   readonly desktopAppUpdate?: boolean;
-  readonly threadContinuation?: boolean;
   readonly targetVersion: string;
-  readonly continueThreadsAfterServerUpdate?: boolean;
 }
 
 type UpdateButtonProps = Pick<ComponentProps<typeof Button>, "variant" | "size" | "className"> & {
@@ -82,12 +79,7 @@ export function useServerUpdate() {
     pendingUpdateEnvironmentIds.add(environmentId);
     const result = await updateServer({
       environmentId,
-      input: {
-        targetVersion,
-        ...(target.threadContinuation && target.continueThreadsAfterServerUpdate
-          ? { continueRunningThreads: true }
-          : {}),
-      },
+      input: { targetVersion },
     });
     pendingUpdateEnvironmentIds.delete(environmentId);
     if (result._tag === "Failure") {
@@ -198,31 +190,23 @@ export function ServerUpdateProgress({
   );
 }
 
-/**
- * Self-updates delegate their full lifecycle to client-runtime so this component can unmount
- * during reconnect without losing operation state.
- */
+/** client-runtime owns self-updates so unmounting during reconnect preserves operation state. */
 export function ServerUpdateAction({
   environmentId,
   serverLabel,
   selfUpdate,
   installation,
   desktopAppUpdate = false,
-  threadContinuation = false,
   targetVersion,
   label = "Update",
   variant = "outline",
   size = "xs",
   className,
   appearance = "button",
-}: Omit<ServerUpdateTarget, "continueThreadsAfterServerUpdate"> & UpdateButtonProps) {
+}: ServerUpdateTarget & UpdateButtonProps) {
   const isDesktopAppUpdate = selfUpdate === "desktop-managed";
   const sessionStateAtom = environmentSession.sessionStateAtom(environmentId);
   const canUpdate = canUpdateServer(useAtomValue(sessionStateAtom));
-  const continueThreadsAfterServerUpdate = useEnvironmentSettings(
-    environmentId,
-    (settings) => settings.continueThreadsAfterServerUpdate,
-  );
   const update = useServerUpdate();
   const { copyToClipboard } = useCopyToClipboard<{ command: string }>({
     target: installation?.kind === "npm-global" ? "update command" : "relaunch command",
@@ -268,9 +252,7 @@ export function ServerUpdateAction({
       serverLabel,
       selfUpdate,
       desktopAppUpdate,
-      threadContinuation,
       targetVersion,
-      continueThreadsAfterServerUpdate,
     });
   };
 
@@ -330,9 +312,7 @@ export function ServerUpdateAction({
   );
 }
 
-/**
- * Its version comes from the host descriptor because the host never delivers a server config.
- */
+/** Read the host descriptor's version because the host never delivers server config. */
 export function OutdatedServerUpdateAction({
   environmentId,
   serverLabel,

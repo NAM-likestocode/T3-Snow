@@ -54,6 +54,7 @@ export function useVoiceDictation(input: {
   const mountedRef = useRef(true);
   const callbacksRef = useRef(input);
   const optionsRef = useRef({ modelId, language, engine, environmentId: input.environmentId });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- recorder callbacks fire asynchronously and must read the latest options
   useEffect(() => {
     callbacksRef.current = input;
     optionsRef.current = { modelId, language, engine, environmentId: input.environmentId };
@@ -212,6 +213,7 @@ export function useVoiceDictation(input: {
   };
 
   // Tick the visible timer and enforce the length cap only while recording.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ticks the visible timer and enforces the length cap only while recording
   useEffect(() => {
     if (phase !== "recording") return;
     const interval = window.setInterval(() => {
@@ -225,6 +227,7 @@ export function useVoiceDictation(input: {
   }, [phase, stop]);
 
   // Never leave the microphone open after the composer unmounts.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the microphone if the composer unmounts mid-recording
   useEffect(() => {
     mountedRef.current = true;
     return () => {

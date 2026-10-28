@@ -58,8 +58,7 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
     machines,
     targetVersion,
   );
-  // A desktop-managed server installs from its own app's update feed, so only
-  // servers that download t3 from npm wait for npm to publish the version.
+  // Desktop-managed servers use their app feed; only npm installs need to wait for publication.
   const needsNpm = behindServers.some((server) => server.selfUpdate !== "desktop-managed");
   const published = useNpmReleasePublished(needsNpm ? targetVersion : null);
   const servers = published
@@ -79,9 +78,11 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
   const providers = useProviderUpdates();
   const updateServer = useServerUpdate();
 
-  const { summary, lines } = describeUpdateEverything({
+  const view = describeUpdateEverything({
     localVersion: localUpdateVersion,
+    localMachines: machines.filter((machine) => machine.hostedByThisApp),
     servers,
+    skipped,
     providerMachines: providers.machines.map((machine) => ({
       environmentId: machine.environmentId,
       label: machine.label,
@@ -93,10 +94,8 @@ export function useUpdateEverything(localUpdateVersion: string | null) {
 
   return {
     hasUpdates: servers.length > 0 || providers.machines.length > 0,
-    summary,
-    lines,
+    ...view,
     restarts,
-    skipped,
     run: async ({
       downloadLocal,
       installLocal,

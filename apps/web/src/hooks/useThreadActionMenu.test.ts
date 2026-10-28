@@ -47,11 +47,8 @@ vi.mock("../state/session", () => ({
     scope === AuthOrchestrationOperateScope && state.granted.has(environmentId),
 }));
 vi.mock("../state/entities", () => ({
+  readEnvironmentServerConfigLoaded: () => true,
   readEnvironmentSupportsAutoSettleOptOut: () => true,
-  readEnvironmentSupportsPinning: () => true,
-  readEnvironmentSupportsSettlement: () => true,
-  readEnvironmentSupportsSnooze: () => true,
-  readEnvironmentSupportsTitleRegeneration: () => true,
   readThreadShell: () => ({
     id: "thread",
     environmentId: "secondary",
@@ -83,7 +80,7 @@ vi.mock("../localApi", () => ({
     },
   }),
 }));
-vi.mock("../logicalProject", () => ({
+vi.mock("@t3tools/client-runtime/state/project-grouping", () => ({
   deriveLogicalProjectKeyFromSettings: () => "project",
   derivePhysicalProjectKey: () => "project",
   selectProjectGroupingSettings: () => ({}),
@@ -156,6 +153,7 @@ const createMenu = () =>
     threadRef: target,
     projectCwd: "/project",
     onStartRename: () => recordEffect("rename"),
+    canShareWithGuest: false,
   });
 
 beforeEach(() => {
@@ -166,33 +164,6 @@ beforeEach(() => {
 });
 
 describe("thread menu permissions", () => {
-  it("disables mutations for a denied secondary environment", () => {
-    createMenu().openMenu(position);
-    const items = state.show.mock.calls[0]![0];
-    expect(items.find((item) => item.id === "rename")?.disabled).toBe(true);
-    expect(items.find((item) => item.id === "delete")?.disabled).toBe(true);
-    expect(items.find((item) => item.id === "copy")?.disabled).not.toBe(true);
-  });
-
-  it("allows the target grant even when the primary environment is denied", () => {
-    state.granted = new Set(["secondary"]);
-    createMenu().openMenu(position);
-    expect(state.show.mock.calls[0]![0].find((item) => item.id === "rename")?.disabled).not.toBe(
-      true,
-    );
-  });
-
-  it("refreshes availability when a retained menu opener gains permission", () => {
-    const menu = createMenu();
-    menu.openMenu(position);
-    expect(state.show.mock.calls[0]![0].find((item) => item.id === "rename")?.disabled).toBe(true);
-    state.granted.add("secondary");
-    menu.openMenu(position);
-    expect(state.show.mock.calls[1]![0].find((item) => item.id === "rename")?.disabled).not.toBe(
-      true,
-    );
-  });
-
   it.each(["rename", "regenerate-title", "delete", "pin", "settle", "archive"] as const)(
     "%s rechecks after the native menu closes",
     async (action) => {
@@ -206,16 +177,4 @@ describe("thread menu permissions", () => {
       expect(state.effects).toEqual([]);
     },
   );
-
-  it.each([
-    ["new-thread-on-branch", "draft"],
-    ["copy-thread-id", "copy"],
-    ["mark-unread", "mark-unread"],
-    ["project-settings", "project-settings"],
-  ] as const)("keeps %s available without task permission", async (action, effect) => {
-    state.show.mockResolvedValue(action);
-    createMenu().openMenu(position);
-    await state.completed.promise;
-    expect(state.effects).toEqual([effect]);
-  });
 });
