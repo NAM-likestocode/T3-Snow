@@ -1,22 +1,9 @@
 // @effect-diagnostics globalDate:off - timestamps are ISO strings for contracts.
 // @effect-diagnostics globalDateInEffect:off - same; the current time itself comes from Clock.
 /**
- * AutopilotService - `/autopilot <goal>` for every provider (T3-Snow).
- *
- * While Autopilot is on, every turn the thread's agent receives starts with
- * the Autopilot instructions (through ThreadTurnPreamble), and questions the
- * agent asks are answered for it. It turns itself off once the thread is
- * settled: no turn running, nothing waiting to be delivered, and no
- * wake-ups armed. It never approves tool calls.
- *
- * It pauses itself after AUTOPILOT_MAX_TURNS runs or AUTOPILOT_MAX_DURATION_MS,
- * whichever comes first; Resume starts a fresh budget.
- *
- * State lives in memory and is mirrored to `<stateDir>/autopilot.json`. After
- * a restart, a thread that still had Autopilot on shows it as paused until the
- * user resumes or stops it.
- *
- * @module autopilot/AutopilotService
+ * T3-Snow `/autopilot <goal>`: prefixes each turn with Autopilot instructions and answers the
+ * agent's questions, never tool approvals. Pauses after its turn or time budget; state survives
+ * restarts as paused.
  */
 import {
   CommandId,
@@ -166,31 +153,29 @@ export const make = Effect.gen(function* () {
     );
 
   /** Sends text as a user message; it waits behind any running turn. */
-  const send = (threadId: ThreadId, text: string) =>
-    Effect.gen(function* () {
-      const id = yield* uuid;
-      return yield* dispatch({
-        type: "message.dispatch",
-        commandId: CommandId.make(`server:autopilot:${threadId}:${id}`),
-        threadId,
-        messageId: MessageId.make(`message:autopilot:${id}`),
-        text,
-        attachments: [],
-        dispatchMode: { type: "queue_after_active" },
-        createdBy: "user",
-        creationSource: "server",
-      });
+  const send = Effect.fn("send")(function* (threadId: ThreadId, text: string) {
+    const id = yield* uuid;
+    return yield* dispatch({
+      type: "message.dispatch",
+      commandId: CommandId.make(`server:autopilot:${threadId}:${id}`),
+      threadId,
+      messageId: MessageId.make(`message:autopilot:${id}`),
+      text,
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+      createdBy: "user",
+      creationSource: "server",
     });
+  });
 
   const wakeUpsArmed = (threadId: ThreadId) =>
     Option.isSome(defer) ? defer.value.hasArmed(threadId) : Effect.succeed(false);
 
-  const clear = (threadId: ThreadId) =>
-    Effect.gen(function* () {
-      states.delete(threadId);
-      yield* preamble.setStanding(threadId, PREAMBLE_KEY, null);
-      yield* recordChange;
-    });
+  const clear = Effect.fn("clear")(function* (threadId: ThreadId) {
+    states.delete(threadId);
+    yield* preamble.setStanding(threadId, PREAMBLE_KEY, null);
+    yield* recordChange;
+  });
 
   const start: AutopilotService["Service"]["start"] = (threadId, rawGoal) =>
     lock.withPermits(1)(
@@ -265,12 +250,11 @@ export const make = Effect.gen(function* () {
     );
 
   /** Stops steering the agent until the user resumes; the running turn finishes normally. */
-  const pause = (threadId: ThreadId, state: ThreadAutopilot) =>
-    Effect.gen(function* () {
-      state.status = "paused";
-      yield* preamble.setStanding(threadId, PREAMBLE_KEY, null);
-      yield* recordChange;
-    });
+  const pause = Effect.fn("pause")(function* (threadId: ThreadId, state: ThreadAutopilot) {
+    state.status = "paused";
+    yield* preamble.setStanding(threadId, PREAMBLE_KEY, null);
+    yield* recordChange;
+  });
 
   /** Pauses on budget, and turns Autopilot off once the thread has nothing left to do. */
   const check = (threadId: ThreadId) =>
@@ -292,24 +276,23 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const answerQuestion = (
+  const answerQuestion = Effect.fn("answerQuestion")(function* (
     event: Extract<OrchestrationV2DomainEvent, { readonly type: "turn-item.updated" }>,
-  ) =>
-    Effect.gen(function* () {
-      const item = event.payload;
-      if (item.type !== "user_input_request") return;
-      if (states.get(event.threadId)?.status !== "active") return;
-      if (item.status !== "pending" && item.status !== "waiting") return;
-      if (answered.has(item.requestId)) return;
-      answered.add(item.requestId);
-      yield* dispatch({
-        type: "runtime-request.respond",
-        commandId: CommandId.make(`server:autopilot-answer:${event.threadId}:${yield* uuid}`),
-        threadId: event.threadId,
-        requestId: item.requestId,
-        answers: buildAutopilotAnswers(item.questions, item.responseMode),
-      });
+  ) {
+    const item = event.payload;
+    if (item.type !== "user_input_request") return;
+    if (states.get(event.threadId)?.status !== "active") return;
+    if (item.status !== "pending" && item.status !== "waiting") return;
+    if (answered.has(item.requestId)) return;
+    answered.add(item.requestId);
+    yield* dispatch({
+      type: "runtime-request.respond",
+      commandId: CommandId.make(`server:autopilot-answer:${event.threadId}:${yield* uuid}`),
+      threadId: event.threadId,
+      requestId: item.requestId,
+      answers: buildAutopilotAnswers(item.questions, item.responseMode),
     });
+  });
 
   const onEvent = (event: OrchestrationV2DomainEvent): Effect.Effect<void> => {
     if (!states.has(event.threadId)) return Effect.void;

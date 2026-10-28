@@ -36,6 +36,7 @@ export function VoiceDictationButton(props: {
 
   // Claim Enter and Escape before the composer's own handlers see them: Enter
   // sends once the transcript lands, Escape discards the take.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Enter and Escape act on the recording only while it is active
   useEffect(() => {
     if (phase !== "recording" && phase !== "transcribing") return;
     const handler = (event: KeyboardEvent) => {

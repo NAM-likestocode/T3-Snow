@@ -267,7 +267,7 @@ describe("DeferService", () => {
         const id = armedId(
           yield* harness.defer.create({ threadId: THREAD_ID, note: "nope", at: "in 5m" }),
         );
-        expect(yield* harness.defer.cancel(THREAD_ID, id)).toBe(`Cancelled ${id} — nope`);
+        expect(yield* harness.defer.cancel(THREAD_ID, id)).toBe(`Cancelled ${id}: nope`);
         yield* harness.advance("5 minutes");
         expect(yield* harness.turnStarts).toEqual([]);
         const error = yield* harness.defer.cancel(THREAD_ID, id).pipe(Effect.flip);
@@ -285,7 +285,7 @@ describe("DeferService", () => {
         const error = yield* harness.defer.cancel(otherThread, id).pipe(Effect.flip);
         expect(error.message).toBe(`no armed trigger with id ${id}`);
         expect(yield* harness.defer.list(otherThread)).toBe("No deferred triggers armed.");
-        expect(yield* harness.defer.list(THREAD_ID)).toContain(`${id} — mine`);
+        expect(yield* harness.defer.list(THREAD_ID)).toContain(`${id}: mine`);
       }).pipe(Effect.scoped),
     );
 
@@ -300,7 +300,7 @@ describe("DeferService", () => {
         expect(yield* message({ at: "in 1m" })).toBe("create requires a note");
         expect(yield* message({ note: "x" })).toBe("create requires at, check, or run");
         expect(yield* message({ note: "x", run: "ls" })).toBe(
-          "`run` needs `at` or `check` to say when it fires — to run something now, use bash",
+          "`run` needs `at` or `check` to say when it fires; to run something now, use bash",
         );
         expect(yield* message({ note: "x", at: "tomorrow 9am" })).toBe(
           "could not understand time: tomorrow 9am",

@@ -22,11 +22,8 @@ export function formatDeferDuration(ms: number): string {
 }
 
 /**
- * How a trigger is doing, as the panel shows it:
- * - `time`: waiting for a clock time
- * - `pending`: a condition not checked yet
- * - `checking`: a condition checked and not yet true (exit 0 or 1)
- * - `broken`: the check itself is failing (exit above 1, e.g. not found or timed out)
+ * How a trigger is doing: `time` waits for a clock time, `pending` has an unchecked condition,
+ * `checking` has a condition not yet true, `broken` has a check that itself fails.
  */
 export type DeferTriggerState = "time" | "pending" | "checking" | "broken";
 

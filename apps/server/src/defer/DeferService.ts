@@ -1,24 +1,9 @@
 // @effect-diagnostics globalDate:off - timestamps are formatted for the agent in local time.
 // @effect-diagnostics globalDateInEffect:off - same; the current time itself comes from Clock.
 /**
- * DeferService - deferred wake-ups for agents (T3-Snow).
- *
- * An agent arms a trigger through the `defer` MCP tool: a time (`at`), a
- * shell condition polled until it exits 0 (`check`), and optionally a command
- * whose output is attached when it fires (`run`). When a trigger fires, the
- * service queues a notification message into the agent's thread, which starts
- * a new turn. Behavior, limits, and wording follow the Pi `defer` extension.
- *
- * Delivery uses the orchestrator's queue (`queue_after_active`), the same path
- * upstream's pull request watch uses, so a wake-up never interrupts a running
- * turn and a queued one survives a restart.
- *
- * Triggers live in memory. Their id, thread, and note are mirrored to
- * `<stateDir>/defer-triggers.json`; after a restart each trigger that never
- * fired is reported to its thread as lost, so nothing disappears silently,
- * while no stale command is ever re-run.
- *
- * @module defer/DeferService
+ * T3-Snow deferred wake-ups behind the `defer` MCP tool. A fired trigger queues a notification
+ * with `queue_after_active`, so it never interrupts a running turn and survives a restart.
+ * Triggers themselves live in memory; ones lost to a restart are reported to the agent.
  */
 import {
   CommandId,
@@ -165,13 +150,13 @@ function toSnapshotEntry(trigger: ArmedTrigger): DeferTrigger {
 function describeListEntry(trigger: ArmedTrigger, now: number): string {
   const runTag = trigger.run ? ` →run \`${trigger.run}\`` : "";
   if (trigger.kind === "at") {
-    return `${trigger.id} — ${trigger.note} [at ${new Date(trigger.firesAt).toLocaleString()}]${runTag}`;
+    return `${trigger.id}: ${trigger.note} [at ${new Date(trigger.firesAt).toLocaleString()}]${runTag}`;
   }
   const lastLine = trigger.lastLine ? ` (${trigger.lastLine.slice(0, 60)})` : "";
   const lastExit = trigger.lastExit === null ? "–" : String(trigger.lastExit);
-  return `${trigger.id} — ${trigger.note} [when \`${trigger.check}\` succeeds (deadline ${new Date(
+  return `${trigger.id}: ${trigger.note} [when \`${trigger.check}\` succeeds (deadline ${new Date(
     trigger.firesAt,
-  ).toLocaleString()})] — ${trigger.checks} checks, last exit ${lastExit}${lastLine}, ${formatCompactDuration(
+  ).toLocaleString()})], ${trigger.checks} checks, last exit ${lastExit}${lastLine}, ${formatCompactDuration(
     Math.max(0, trigger.firesAt - now),
   )} left${runTag}`;
 }
@@ -241,8 +226,8 @@ export const make = Effect.gen(function* () {
   });
 
   /** Queues the wake-up after any running turn; a gone or archived thread drops it. */
-  const deliver = (threadId: ThreadId, text: string, summary: string) =>
-    Effect.gen(function* () {
+  const deliver = Effect.fn("deliver")(
+    function* (threadId: ThreadId, text: string, summary: string) {
       if (!(yield* readThread(threadId))) return;
       const id = yield* uuid;
       yield* engine.dispatch({
@@ -257,9 +242,9 @@ export const make = Effect.gen(function* () {
         createdBy: "agent",
         creationSource: "server",
       });
-    }).pipe(
-      Effect.catchCause((cause) => Effect.logWarning("defer: wake-up not delivered", { cause })),
-    );
+    },
+    Effect.catchCause((cause) => Effect.logWarning("defer: wake-up not delivered", { cause })),
+  );
 
   const shell = yield* Effect.cached(
     Effect.gen(function* () {
@@ -363,46 +348,45 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const watch = (trigger: ArmedTrigger): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      if (trigger.kind === "at") {
-        yield* Effect.sleep(Duration.millis(Math.max(0, trigger.firesAt - (yield* nowMs))));
-        return yield* fire(trigger, { kind: "due" });
+  const watch = Effect.fn("DeferService.watch")(function* (trigger: ArmedTrigger) {
+    if (trigger.kind === "at") {
+      yield* Effect.sleep(Duration.millis(Math.max(0, trigger.firesAt - (yield* nowMs))));
+      return yield* fire(trigger, { kind: "due" });
+    }
+    let delay = Math.min(trigger.pollMs, 1_000);
+    while (true) {
+      const remaining = trigger.firesAt - (yield* nowMs);
+      if (remaining <= 0) break;
+      yield* Effect.sleep(Duration.millis(Math.min(delay, remaining)));
+      if ((yield* nowMs) >= trigger.firesAt) break;
+      if (!(yield* commandsAllowed(trigger.threadId))) {
+        return yield* fire(trigger, { kind: "blocked", check: trigger.check! });
       }
-      let delay = Math.min(trigger.pollMs, 1_000);
-      while (true) {
-        const remaining = trigger.firesAt - (yield* nowMs);
-        if (remaining <= 0) break;
-        yield* Effect.sleep(Duration.millis(Math.min(delay, remaining)));
-        if ((yield* nowMs) >= trigger.firesAt) break;
-        if (!(yield* commandsAllowed(trigger.threadId))) {
-          return yield* fire(trigger, { kind: "blocked", check: trigger.check! });
-        }
-        const result = yield* runShell(trigger.check!, trigger.cwd, DEFER_CHECK_RUN_TIMEOUT_MS);
-        trigger.checks += 1;
-        trigger.lastExit = result.exitCode;
-        trigger.lastLine =
-          result.output
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .findLast((line) => line.length > 0) ?? null;
-        yield* publish;
-        if (result.exitCode === 0) {
-          return yield* fire(trigger, {
-            kind: "condition",
-            check: trigger.check!,
-            afterMs: (yield* nowMs) - trigger.armedAt,
-          });
-        }
-        delay = trigger.pollMs;
+      const result = yield* runShell(trigger.check!, trigger.cwd, DEFER_CHECK_RUN_TIMEOUT_MS);
+      trigger.checks += 1;
+      trigger.lastExit = result.exitCode;
+      trigger.lastLine =
+        result.output
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .findLast((line) => line.length > 0) ?? null;
+      yield* publish;
+      if (result.exitCode === 0) {
+        return yield* fire(trigger, {
+          kind: "condition",
+          check: trigger.check!,
+          afterMs: (yield* nowMs) - trigger.armedAt,
+        });
       }
-      yield* fire(trigger, {
-        kind: "timeout",
-        afterMs: (yield* nowMs) - trigger.armedAt,
-        checks: trigger.checks,
-        lastExit: trigger.lastExit,
-      });
+      delay = trigger.pollMs;
+    }
+    yield* fire(trigger, {
+      kind: "timeout",
+      afterMs: (yield* nowMs) - trigger.armedAt,
+      checks: trigger.checks,
+      lastExit: trigger.lastExit,
     });
+  });
 
   const reject = (detail: string) => Effect.fail(new DeferRequestError({ detail }));
 
@@ -422,7 +406,7 @@ export const make = Effect.gen(function* () {
       if (!at && !check && !run) return yield* reject("create requires at, check, or run");
       if (run && !at && !check) {
         return yield* reject(
-          "`run` needs `at` or `check` to say when it fires — to run something now, use bash",
+          "`run` needs `at` or `check` to say when it fires; to run something now, use bash",
         );
       }
 
@@ -505,22 +489,20 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  const list: DeferService["Service"]["list"] = (threadId) =>
-    Effect.gen(function* () {
-      const now = yield* nowMs;
-      const entries = [...triggers.values()]
-        .filter((trigger) => trigger.threadId === threadId)
-        .toSorted((left, right) => left.firesAt - right.firesAt);
-      if (entries.length === 0) return "No deferred triggers armed.";
-      return entries.map((trigger) => describeListEntry(trigger, now)).join("\n");
-    });
+  const list: DeferService["Service"]["list"] = Effect.fn("list")(function* (threadId: ThreadId) {
+    const now = yield* nowMs;
+    const entries = [...triggers.values()]
+      .filter((trigger) => trigger.threadId === threadId)
+      .toSorted((left, right) => left.firesAt - right.firesAt);
+    if (entries.length === 0) return "No deferred triggers armed.";
+    return entries.map((trigger) => describeListEntry(trigger, now)).join("\n");
+  });
 
-  const remove = (trigger: ArmedTrigger) =>
-    Effect.gen(function* () {
-      triggers.delete(trigger.id);
-      if (trigger.fiber) yield* Fiber.interrupt(trigger.fiber);
-      yield* recordChange;
-    });
+  const remove = Effect.fn("remove")(function* (trigger: ArmedTrigger) {
+    triggers.delete(trigger.id);
+    if (trigger.fiber) yield* Fiber.interrupt(trigger.fiber);
+    yield* recordChange;
+  });
 
   const cancel: DeferService["Service"]["cancel"] = (threadId, id) =>
     triggerLock.withPermits(1)(
@@ -531,7 +513,7 @@ export const make = Effect.gen(function* () {
           return yield* reject(`no armed trigger with id ${id.trim()}`);
         }
         yield* remove(trigger);
-        return `Cancelled ${trigger.id} — ${trigger.note}`;
+        return `Cancelled ${trigger.id}: ${trigger.note}`;
       }),
     );
 
@@ -566,8 +548,9 @@ export const make = Effect.gen(function* () {
     list,
     cancel,
     cancelById,
-    hasArmed: (threadId) =>
-      Effect.sync(() => [...triggers.values()].some((trigger) => trigger.threadId === threadId)),
+    hasArmed: Effect.fn("DeferService.hasArmed")(function* (threadId: ThreadId) {
+      return [...triggers.values()].some((trigger) => trigger.threadId === threadId);
+    }),
     streamChanges: SubscriptionRef.changes(changes),
   });
 });

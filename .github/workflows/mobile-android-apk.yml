@@ -16,6 +16,7 @@ jobs:
   mirror:
     if: github.repository == 'pingdotgg/t3code'
     name: Mirror beta APK
+    if: github.repository == 'pingdotgg/t3code'
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 10
     permissions:

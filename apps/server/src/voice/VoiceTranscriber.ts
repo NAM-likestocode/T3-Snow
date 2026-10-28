@@ -1,12 +1,6 @@
 /**
- * VoiceTranscriber - cloud dictation through Deepgram (T3-Snow).
- *
- * Clients that choose the Deepgram engine send the recorded clip here; the
- * environment calls Deepgram with the API key kept in its secret store, so
- * the key never reaches a client and every device paired with this
- * environment can use it. Local Whisper dictation never comes here.
- *
- * @module voice/VoiceTranscriber
+ * T3-Snow Deepgram dictation. The API key stays in this environment's secret store and never
+ * reaches a client, so every paired device can use it.
  */
 import type { VoiceStatus, VoiceTranscribeInput, VoiceTranscribeResult } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -94,46 +88,47 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  const transcribe: VoiceTranscriber["Service"]["transcribe"] = (input) =>
-    Effect.gen(function* () {
-      const key = yield* readKey;
-      if (Option.isNone(key)) {
-        return { text: null, message: "Add a Deepgram API key in Settings → Voice first." };
-      }
-      const audio = Buffer.from(input.audioBase64, "base64");
-      if (audio.length === 0) return { text: null, message: "The recording was empty." };
-      const outcome = yield* httpClient
-        .execute(
-          HttpClientRequest.post(buildDeepgramUrl(input.language)).pipe(
-            HttpClientRequest.setHeader("authorization", `Token ${key.value}`),
-            HttpClientRequest.bodyUint8Array(audio, input.mimeType || "audio/webm"),
-          ),
-        )
-        .pipe(
-          Effect.flatMap((response) =>
-            response.status >= 200 && response.status < 300
-              ? HttpClientResponse.schemaBodyJson(DeepgramResponse)(response).pipe(
-                  Effect.map((body): VoiceTranscribeResult => ({
-                    text: body.results.channels[0]?.alternatives[0]?.transcript.trim() ?? "",
-                  })),
-                )
-              : Effect.succeed<VoiceTranscribeResult>({
-                  text: null,
-                  message: describeDeepgramFailure(response.status),
-                }),
-          ),
-          Effect.timeout(REQUEST_TIMEOUT),
-          Effect.catchCause((cause) =>
-            Effect.logWarning("voice: Deepgram request failed", { cause }).pipe(
-              Effect.as<VoiceTranscribeResult>({
+  const transcribe: VoiceTranscriber["Service"]["transcribe"] = Effect.fn("transcribe")(function* (
+    input: VoiceTranscribeInput,
+  ) {
+    const key = yield* readKey;
+    if (Option.isNone(key)) {
+      return { text: null, message: "Add a Deepgram API key in Settings → Voice first." };
+    }
+    const audio = Buffer.from(input.audioBase64, "base64");
+    if (audio.length === 0) return { text: null, message: "The recording was empty." };
+    const outcome = yield* httpClient
+      .execute(
+        HttpClientRequest.post(buildDeepgramUrl(input.language)).pipe(
+          HttpClientRequest.setHeader("authorization", `Token ${key.value}`),
+          HttpClientRequest.bodyUint8Array(audio, input.mimeType || "audio/webm"),
+        ),
+      )
+      .pipe(
+        Effect.flatMap((response) =>
+          response.status >= 200 && response.status < 300
+            ? HttpClientResponse.schemaBodyJson(DeepgramResponse)(response).pipe(
+                Effect.map((body): VoiceTranscribeResult => ({
+                  text: body.results.channels[0]?.alternatives[0]?.transcript.trim() ?? "",
+                })),
+              )
+            : Effect.succeed<VoiceTranscribeResult>({
                 text: null,
-                message: describeDeepgramFailure(null),
+                message: describeDeepgramFailure(response.status),
               }),
-            ),
+        ),
+        Effect.timeout(REQUEST_TIMEOUT),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("voice: Deepgram request failed", { cause }).pipe(
+            Effect.as<VoiceTranscribeResult>({
+              text: null,
+              message: describeDeepgramFailure(null),
+            }),
           ),
-        );
-      return outcome;
-    });
+        ),
+      );
+    return outcome;
+  });
 
   return VoiceTranscriber.of({ status, setDeepgramKey, transcribe });
 });

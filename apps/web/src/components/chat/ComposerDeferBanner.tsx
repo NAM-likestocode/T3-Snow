@@ -35,6 +35,7 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
   const hasTriggers = triggers.length > 0;
 
   // A once-a-second text update, only while something is armed.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- drives a once-a-second countdown while a wake-up is armed
   useEffect(() => {
     if (!hasTriggers) return;
     const tick = () => setNow(Date.now());

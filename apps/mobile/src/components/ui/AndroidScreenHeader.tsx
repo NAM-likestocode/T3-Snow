@@ -1,6 +1,7 @@
 import { AppActivityIndicator } from "./AppActivityIndicator";
-import { Column, Text as NativeText, RNHostView } from "@expo/ui/jetpack-compose";
-import { useState, type ReactNode } from "react";
+import { Column, Row, Text as NativeText, RNHostView } from "@expo/ui/jetpack-compose";
+import { weight } from "@expo/ui/jetpack-compose/modifiers";
+import { use, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
 import type { AppSymbolName } from "./AppSymbol";
@@ -11,6 +12,7 @@ import { splitAndroidHeaderActions } from "./headerMenu.android";
 import { useScaledTextRole } from "../../features/settings/appearance/useScaledTextRole";
 import { useToolbarLayout } from "./useToolbarLayout";
 import { useControlTheme } from "./useControlTheme";
+import { RoutedFormSheetContext } from "./RoutedFormSheetContext";
 
 export interface AndroidHeaderAction {
   readonly accessibilityLabel: string;
@@ -43,11 +45,14 @@ export function AndroidScreenHeader(props: {
   readonly onBack?: () => void;
   readonly embedded?: boolean;
   readonly hideBottomBorder?: boolean;
+  /** One row with the subtitle after the title, for screens short on height. */
+  readonly compact?: boolean;
 }) {
   const { colors } = useControlTheme();
   const titleTypography = useScaledTextRole("title");
   const subtitleTypography = useScaledTextRole("label");
-  const { paddingTop, paddingBottom } = useToolbarLayout(props.embedded);
+  const inFormSheet = use(RoutedFormSheetContext);
+  const { paddingTop, paddingBottom } = useToolbarLayout(props.embedded || inFormSheet);
   const [headerWidth, setHeaderWidth] = useState(0);
   const { visibleActions, overflowActions } = splitAndroidHeaderActions(
     props.actions ?? [],
@@ -64,7 +69,14 @@ export function AndroidScreenHeader(props: {
         borderBottomWidth: props.hideBottomBorder ? 0 : undefined,
       }}
     >
+      {inFormSheet ? (
+        <View
+          pointerEvents="none"
+          className="absolute top-1 h-1 w-8 self-center rounded-full bg-header-foreground/40"
+        />
+      ) : null}
       <NativeAppBar
+        singleLine={props.compact}
         navigationIcon={
           props.onBack || props.leading ? (
             <View collapsable={false} className="flex-row items-center">
@@ -95,6 +107,26 @@ export function AndroidScreenHeader(props: {
             >
               {props.title}
             </NativeText>
+          ) : props.compact ? (
+            <Row verticalAlignment="center" horizontalArrangement={{ spacedBy: 8 }}>
+              <NativeText
+                color={colors["--color-header-foreground"]}
+                maxLines={1}
+                overflow="ellipsis"
+                style={titleTypography}
+              >
+                {props.title}
+              </NativeText>
+              <NativeText
+                color={colors["--color-foreground-muted"]}
+                maxLines={1}
+                overflow="ellipsis"
+                style={subtitleTypography}
+                modifiers={[weight(1)]}
+              >
+                {props.subtitle}
+              </NativeText>
+            </Row>
           ) : (
             <Column>
               <NativeText

@@ -58,6 +58,7 @@ export function VoiceSettings() {
   };
   // Re-read the cache on open and whenever the selected model stops downloading.
   const modelDownloading = status?.state === "downloading";
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- re-reads the browser's model cache once a download stops
   useEffect(() => {
     if (modelDownloading) return;
     void listDownloadedWhisperModels().then(setDownloaded);
