@@ -6,7 +6,7 @@ import {
   type RuntimeMode,
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -26,12 +26,9 @@ const THREAD_ID = ThreadId.make("thread-1");
 const PROJECT_ID = ProjectId.make("project-1");
 
 let uuidCounter = 0;
-const testCrypto = Crypto.make({
-  randomBytes: (size) => {
-    uuidCounter += 1;
-    return new Uint8Array(size).fill(uuidCounter % 256);
-  },
-  digest: (_algorithm, data) => Effect.succeed(data),
+const testCrypto = SecureRandom.make((size) => {
+  uuidCounter += 1;
+  return new Uint8Array(size).fill(uuidCounter % 256);
 });
 
 /** The shell fields the service reads; the rest of the shell is irrelevant here. */
@@ -111,7 +108,7 @@ const makeHarness = Effect.fn("makeDeferHarness")(function* (options: HarnessOpt
     // The service only reads stateDir.
     Layer.succeed(ServerConfig.ServerConfig, { stateDir } as ServerConfig.ServerConfig["Service"]),
     Layer.succeed(FileSystem.FileSystem, memoryFileSystem),
-    Layer.succeed(Crypto.Crypto, testCrypto),
+    Layer.succeed(SecureRandom.SecureRandom, testCrypto),
   );
   const service = yield* Layer.build(
     Layer.effect(DeferService.DeferService, DeferService.make).pipe(Layer.provide(dependencies)),

@@ -1,6 +1,7 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AlarmClockIcon, CircleIcon, RefreshCwIcon, TriangleAlertIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
 import { memo, useEffect, useState } from "react";
 
 import { cn } from "~/lib/utils";
@@ -29,6 +30,7 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
 }) {
+  const gt = useGT();
   const triggers = useThreadDeferTriggers(environmentId, threadId);
   const cancel = useAtomCommand(deferEnvironment.cancel, { reportFailure: false });
   const [now, setNow] = useState(() => Date.now());
@@ -53,8 +55,8 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
       const error = squashAtomCommandFailure(result);
       toastManager.add({
         type: "error",
-        title: "Couldn't cancel the wake-up",
-        description: error instanceof Error ? error.message : "Try again.",
+        title: gt("Couldn't cancel the wake-up"),
+        description: error instanceof Error ? error.message : gt("Try again."),
       });
     }
   };
@@ -67,10 +69,14 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
             <AlarmClockIcon />
           </ComposerBanner.Icon>
           <ComposerBanner.Content>
-            <span className="text-muted-foreground">Wake-ups</span>
+            <T>
+              <span className="text-muted-foreground">Wake-ups</span>
+            </T>
           </ComposerBanner.Content>
           <ComposerBanner.Actions>
-            <ComposerBanner.Count>{triggers.length} armed</ComposerBanner.Count>
+            <ComposerBanner.Count>
+              {gt("{count} armed", { count: triggers.length })}
+            </ComposerBanner.Count>
           </ComposerBanner.Actions>
         </ComposerBanner.Row>
         {triggers.map((trigger) => {
@@ -87,12 +93,14 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
                 <StateIcon />
               </ComposerBanner.Icon>
               <ComposerBanner.Content
-                title={trigger.check ? `when \`${trigger.check}\`` : undefined}
+                title={trigger.check ? gt("when `{check}`", { check: trigger.check }) : undefined}
               >
                 <span className="shrink-0 font-mono text-muted-foreground">{trigger.id}</span>
                 <span className="min-w-0 flex-1 truncate text-foreground/80">{trigger.note}</span>
                 {trigger.run ? (
-                  <span className="shrink-0 text-muted-foreground/60">→run</span>
+                  <span className="shrink-0 text-muted-foreground/60">
+                    {gt("→run", { $context: "a wake-up also runs a command" })}
+                  </span>
                 ) : null}
               </ComposerBanner.Content>
               <ComposerBanner.Actions>
@@ -105,7 +113,7 @@ export const ComposerDeferBanner = memo(function ComposerDeferBanner({
                   {describeDeferStatus(trigger, now)}
                 </span>
                 <ComposerBanner.Dismiss
-                  aria-label={`Cancel wake-up ${trigger.id}`}
+                  aria-label={gt("Cancel wake-up {id}", { id: trigger.id })}
                   onPointerDown={(event) => event.preventDefault()}
                   onClick={() => void cancelTrigger(trigger.id)}
                 />

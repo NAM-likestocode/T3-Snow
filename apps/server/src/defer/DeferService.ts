@@ -16,7 +16,7 @@ import {
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -167,7 +167,7 @@ export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const serverConfig = yield* ServerConfig.ServerConfig;
   const scope = yield* Effect.scope;
 
@@ -178,7 +178,7 @@ export const make = Effect.gen(function* () {
   const triggerLock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<DeferTriggersSnapshot>({ triggers: [] });
 
-  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
+  const uuid = crypto.uuidV4();
   const nowMs = Clock.currentTimeMillis;
 
   const persist = Effect.suspend(() => {

@@ -10,7 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -32,14 +32,11 @@ const THREAD = ThreadId.make("thread-1");
 const NOW = "1970-01-01T00:00:00.000Z";
 
 let uuidCounter = 0;
-const testCrypto = Crypto.make({
-  randomBytes: (size) => {
-    uuidCounter += 1;
-    const bytes = new Uint8Array(size);
-    for (let index = 0; index < size; index += 1) bytes[index] = (uuidCounter * 7 + index) % 256;
-    return bytes;
-  },
-  digest: (_algorithm, data) => Effect.succeed(data),
+const testCrypto = SecureRandom.make((size) => {
+  uuidCounter += 1;
+  const bytes = new Uint8Array(size);
+  for (let index = 0; index < size; index += 1) bytes[index] = (uuidCounter * 7 + index) % 256;
+  return bytes;
 });
 
 /** The shell fields the service reads; the rest of the shell is irrelevant here. */
@@ -101,7 +98,7 @@ const makeHarness = Effect.fn("makeAutopilotHarness")(function* (
     ThreadTurnPreamble.layer,
     Layer.succeed(ServerConfig.ServerConfig, { stateDir } as ServerConfig.ServerConfig["Service"]),
     Layer.succeed(FileSystem.FileSystem, memoryFileSystem),
-    Layer.succeed(Crypto.Crypto, testCrypto),
+    Layer.succeed(SecureRandom.SecureRandom, testCrypto),
   );
   const context = yield* Layer.build(
     Layer.effect(AutopilotService.AutopilotService, AutopilotService.make).pipe(

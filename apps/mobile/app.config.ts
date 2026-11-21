@@ -7,6 +7,8 @@ type AppVariant = "development" | "preview" | "production";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
+// Expo's TypeScript setup otherwise installs `typescript` on every start; we typecheck with tsrs.
+process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
@@ -108,12 +110,16 @@ function resolveAppVariant(value: string | undefined): AppVariant {
     case "preview":
     case "production":
       return value;
-    default:
+    case undefined:
       return "production";
+    default:
+      throw new Error("APP_VARIANT must be development, preview, or production.");
   }
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
+// Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
+const HOSTED_APP_HOST = "app.t3.codes";
 // T3-Snow: the fork's own Android build (snow-mobile-release.yml) installs beside the official app.
 const snowAppName = repoEnv.T3SNOW_APP_NAME?.trim() || undefined;
 const snowAndroidPackage = repoEnv.T3SNOW_ANDROID_PACKAGE?.trim() || undefined;
@@ -193,7 +199,12 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
         displayName: "Agent Activity",
         description: "Shows the current state of active T3 Code agents.",
         android: null,
-        ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
+        ios: {
+          supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"],
+          // Embeds the layout so the gallery preview and a new widget render
+          // before the app has run once; the app replaces it on publish.
+          initialLayout: "./src/widgets/AgentActivityWidget.tsx",
+        },
       },
     ],
   },
@@ -230,7 +241,7 @@ const config: ExpoConfig = {
   slug: "t3-code",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: repoEnv.T3SNOW_APP_VERSION?.trim() || repoEnv.T3CODE_MOBILE_VERSION || "2.1.0",
+  version: repoEnv.T3SNOW_APP_VERSION?.trim() || repoEnv.T3CODE_MOBILE_VERSION || "2.3.0",
   runtimeVersion: {
     // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.
     policy: runtimeVersionPolicy,
@@ -254,6 +265,7 @@ const config: ExpoConfig = {
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
       `webcredentials:${variant.relyingParty}`,
+      `applinks:${HOSTED_APP_HOST}`,
     ],
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
@@ -269,6 +281,8 @@ const config: ExpoConfig = {
       },
       NSLocalNetworkUsageDescription:
         "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
+      // Built with the iOS 27 SDK, only view controllers can hide or style the status bar.
+      UIViewControllerBasedStatusBarAppearance: true,
       NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
       // System picture in picture needs background audio to start and survive outside the app.
       UIBackgroundModes: ["audio"],
@@ -307,13 +321,20 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
     blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
+    intentFilters: [
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [{ scheme: "https", host: HOSTED_APP_HOST, pathPrefix: "/threads/" }],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+    ],
   },
   web: {
     favicon: variant.assets.appIcon,
   },
   plugins: [
     "expo-asset",
-    "react-native-pdf-jsi",
     [
       "expo-font",
       {
@@ -332,7 +353,12 @@ const config: ExpoConfig = {
             },
             {
               fontFamily: "DMSans-Bold",
-              fontDefinitions: [{ path: dmSansFonts.bold, weight: 700 }],
+              // Android picks fallback glyphs (such as Vietnamese) at the requested weight, so bold text
+              // asks for 700; the 400 entry lets a relative bold step (Typeface.BOLD) land on 700 too.
+              fontDefinitions: [
+                { path: dmSansFonts.bold, weight: 400 },
+                { path: dmSansFonts.bold, weight: 700 },
+              ],
             },
           ],
         },
@@ -372,7 +398,6 @@ const config: ExpoConfig = {
       "expo-audio",
       {
         microphonePermission: "Allow T3 Code to use your microphone for voice input.",
-        // T3-Snow: Android dictation records here and transcribes with the server's Deepgram key.
         recordAudioAndroid: true,
         enableBackgroundPlayback: false,
         enableBackgroundRecording: false,
@@ -391,7 +416,7 @@ const config: ExpoConfig = {
       "expo-image-picker",
       {
         photosPermission: false,
-        // T3-Snow: `false` would strip RECORD_AUDIO, which Android dictation needs.
+        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.
         microphonePermission: "Allow T3 Code to use your microphone for voice input.",
       },
     ],
@@ -446,11 +471,16 @@ const config: ExpoConfig = {
     "./plugins/withAndroidModernPopupMenu.cjs",
     "./plugins/withAndroidModernAlertDialog.cjs",
     "./plugins/withAndroidPredictiveBackCompat.cjs",
+    // MainActivity mods run in reverse order; extend the tablet-orientation override.
+    "./plugins/withAndroidWindowDisplayMetrics.cjs",
     "./plugins/withAndroidTabletOrientation.cjs",
     ...(isIosPersonalTeamBuild ? ["./plugins/withoutIosPersonalTeamCapabilities.cjs"] : []),
   ],
   extra: {
     appVariant: APP_VARIANT,
+    secretsFeatureEnabled: ["1", "true"].includes(
+      process.env.T3CODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
+    ),
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
     relay: {
       url: repoEnv.T3CODE_RELAY_URL ?? null,

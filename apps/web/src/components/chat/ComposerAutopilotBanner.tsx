@@ -1,6 +1,7 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { SparklesIcon } from "lucide-react";
+import { T, useGT } from "gt-react";
+import { BotIcon } from "lucide-react";
 import { memo } from "react";
 
 import { autopilotEnvironment, useThreadAutopilot } from "~/state/autopilot";
@@ -21,6 +22,7 @@ export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
   readonly environmentId: EnvironmentId | null;
   readonly threadId: ThreadId | null;
 }) {
+  const gt = useGT();
   const autopilot = useThreadAutopilot(environmentId, threadId);
   const stop = useAtomCommand(autopilotEnvironment.stop, { reportFailure: false });
   const resume = useAtomCommand(autopilotEnvironment.resume, { reportFailure: false });
@@ -34,7 +36,7 @@ export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
       toastManager.add({
         type: "error",
         title: failureTitle,
-        description: error instanceof Error ? error.message : "Try again.",
+        description: error instanceof Error ? error.message : gt("Try again."),
       });
     }
   };
@@ -44,11 +46,11 @@ export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
       <ComposerBanner.Root density="comfortable" data-composer-autopilot-banner="true">
         <ComposerBanner.Row>
           <ComposerBanner.Icon>
-            <SparklesIcon />
+            <BotIcon />
           </ComposerBanner.Icon>
           <ComposerBanner.Content>
             <span className="shrink-0 font-medium">
-              {paused ? "Autopilot paused" : "Autopilot"}
+              {paused ? gt("Autopilot paused") : gt("Autopilot")}
             </span>
             <span className="min-w-0 flex-1 truncate text-muted-foreground">{autopilot.goal}</span>
           </ComposerBanner.Content>
@@ -57,17 +59,17 @@ export const ComposerAutopilotBanner = memo(function ComposerAutopilotBanner({
               <Button
                 size="xs"
                 variant="outline"
-                onClick={() => void run(resume, "Couldn't resume Autopilot")}
+                onClick={() => void run(resume, gt("Couldn't resume Autopilot"))}
               >
-                Resume
+                <T>Resume</T>
               </Button>
             ) : null}
             <Button
               size="xs"
               variant="ghost"
-              onClick={() => void run(stop, "Couldn't stop Autopilot")}
+              onClick={() => void run(stop, gt("Couldn't stop Autopilot"))}
             >
-              Stop
+              <T>Stop</T>
             </Button>
           </ComposerBanner.Actions>
         </ComposerBanner.Row>

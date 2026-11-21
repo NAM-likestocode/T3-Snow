@@ -1,5 +1,4 @@
 import { useFocusEffect } from "@react-navigation/native";
-import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef } from "react";
 import {
   voiceInputBlocksSubmission,
@@ -14,18 +13,15 @@ const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: n
 
 export function useVoiceInputController(input: {
   readonly ownerKey: string | null;
-  /** T3-Snow: the environment that transcribes when the Deepgram engine is used. */
-  readonly environmentId?: EnvironmentId | null;
   readonly label: string;
   readonly readDraftMessage: () => string | null;
-  readonly subscribeToDraftChanges: (onChange: () => void) => () => void;
   readonly selection: ComposerEditorSelection;
   readonly disabled?: boolean;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onChangeSelection: (selection: ComposerEditorSelection) => void;
 }) {
   const global = useGlobalVoiceInput();
-  const { session, setTranscriptionEnvironment } = global;
+  const { session } = global;
   const latestInput = useRef(input);
   // oxlint-disable-next-line react/refs -- Transcription finishes asynchronously and must reach the composer's current selection setter, not the one captured at start.
   latestInput.current = input;
@@ -50,7 +46,6 @@ export function useVoiceInputController(input: {
   const start = useCallback(() => {
     const captured = latestInput.current;
     if (!captured.ownerKey || captured.disabled) return;
-    setTranscriptionEnvironment(captured.environmentId ?? null);
     void session.start({
       ...createVoiceInputTarget(
         captured.ownerKey,
@@ -62,17 +57,14 @@ export function useVoiceInputController(input: {
           }
         },
         captured.selection,
-        captured.subscribeToDraftChanges,
       ),
       label: captured.label,
     });
-  }, [session, setTranscriptionEnvironment]);
+  }, [session]);
   const state = global.ownerKey === input.ownerKey ? global.state : IDLE_STATE;
   const isBusy = voiceInputBlocksSubmission(state);
   return {
-    isAvailable:
-      (global.isAvailable || global.resolveEngineFor(input.environmentId ?? null) !== null) &&
-      (!global.isBusy || global.ownerKey === input.ownerKey),
+    isAvailable: global.isAvailable && (!global.isBusy || global.ownerKey === input.ownerKey),
     state,
     audioLevels: global.audioLevels,
     elapsedSeconds: global.elapsedSeconds,

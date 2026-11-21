@@ -17,7 +17,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -96,7 +96,7 @@ export const make = Effect.gen(function* () {
   const defer = yield* Effect.serviceOption(DeferService.DeferService);
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const serverConfig = yield* ServerConfig.ServerConfig;
 
   const statePath = path.join(serverConfig.stateDir, STATE_FILE_NAME);
@@ -105,7 +105,7 @@ export const make = Effect.gen(function* () {
   const answered = new Set<string>();
   const lock = yield* Semaphore.make(1);
   const changes = yield* SubscriptionRef.make<AutopilotSnapshot>({ threads: [] });
-  const uuid = crypto.randomUUIDv4().pipe(Effect.orDie);
+  const uuid = crypto.uuidV4();
 
   const recordChange = Effect.suspend(() => {
     const entries = [...states.entries()].map(([threadId, state]) => ({

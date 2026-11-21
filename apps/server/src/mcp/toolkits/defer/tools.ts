@@ -2,6 +2,7 @@ import { McpCapabilityUnavailableError, OrchestratorMcpFailure } from "@t3tools/
 import * as Schema from "effect/Schema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
+import { McpSchema } from "effect/ai";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
 import * as DeferService from "../../../defer/DeferService.ts";
@@ -57,6 +58,8 @@ const DeferTool = Tool.make("defer", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, true);
+  .annotate(Tool.OpenWorld, true)
+  // Arms wake-ups for the calling thread, so outside clients never see it.
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const DeferToolkit = Toolkit.make(DeferTool);
